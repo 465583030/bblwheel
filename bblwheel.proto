@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+option java_package = "com.hemayun.bblwheel";
+option java_generate_equals_and_hash = true;
+option optimize_for = SPEED;
+
+package bblwheel;
+
+message Void{}
+
+message Service {
+    string ID = 1;
+    string Name = 2;
+    repeated string Tags = 3;
+    string Address = 4;
+    string DataCenter = 5;
+    string Node = 6;
+    string  PID = 7;
+    int32 Weight = 8;
+    bool Single = 9;
+    repeated string DependentServices = 10;
+    repeated string DependentConfigs = 11;
+    enum Status {
+        INIT = 0;
+        ONLINE = 1;
+        MAINTENANCE = 2;
+        OFFLINE = 3;
+        FAULT = 4;
+        UNAUTHORIZE = 5;
+    }
+    Status status = 12;
+}
+
+message ConfigEntry {
+    string Key = 1;
+    string Value = 2;
+}
+
+message Config {
+    repeated ConfigEntry Itmes = 1;
+}
+
+message UpdateConfigReq {
+    string ServiceID = 1;
+    string ServiceName = 2;
+    Config config = 3;
+}
+
+message RegisterResult {
+    repeated Service DependentServices = 1;
+    map<string,Config> DependentConfigs = 2;
+    int32 Result = 3;
+    string Desc = 4;
+}
+
+message Statistics {
+    string ServiceID = 1;
+    string ServiceName = 2;
+    int64 Count = 3;
+    int64 UpTime = 4;
+    int64 UsedMem = 5;
+    int64 FreeMem = 6;
+    int64 Threads = 7;
+    int64 AvgRespTime = 8;
+    int64 MinRespTime = 9;
+    int64 MaxRespTime = 10;
+    int64 LastActiveTime = 11;
+    map<string, string> Other = 12;
+}
+
+message Event {
+    enum EventType {
+        DISCOVERY = 0;
+        CONFIGUPDATE = 1;
+        STATISTICS = 2;
+    }
+    EventType Type = 1;
+    Service Service = 2;
+    ConfigEntry Item = 3;
+    Statistics Stat = 4;
+}
+
+
+service BblWheel {
+  rpc Register(Service) returns (RegisterResult);
+  rpc Unregister(Service) returns (Void);
+  rpc UpdateStatus(Service) returns (Void);
+  rpc UpdateConfig(UpdateConfigReq) returns (Void);
+  rpc KeepAlive(stream Event) returns (stream Event);
+}

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+option java_package = "com.hemayun.bblwheel";
+option java_generate_equals_and_hash = true;
+option optimize_for = SPEED;
+
+
+
+package bblwheel;
+
+message Request {
+    int64 ID = 1;
+    string ClintID = 2;
+    string ClientAddr = 3;
+    int64 Timestamp = 4;
+    repeated string ForwardFor = 5;
+    string Path = 6;
+    string Token = 7;
+    bytes Content = 8;
+    map<string, string> Params = 9;
+}
+
+message Response {
+    int64 ID = 1;
+    string ClientID = 2;
+    int64 Timestamp = 3;
+    int32 Status = 5;
+    string StatusText = 6;
+    string NewToken = 7;
+    bytes Content = 8;
+    map<string, string> Params = 9;
+}
+
+message Message {
+    int64 ID = 1;
+    string Path = 2;
+    int64 Timestamp = 3;
+    repeated string ForwardFor = 4;
+    string Token = 5;
+    bytes Content = 6;
+    map<string, string> Params = 7;
+}
+
+service Rpc {
+  rpc Call(Request) returns (Response);
+  rpc Channel(stream Message) returns (stream Message);
+}
