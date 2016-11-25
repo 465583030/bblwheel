@@ -187,6 +187,7 @@ func (t *authService) has(from, to string) bool {
 			}
 		}
 	}
+
 	t.lock.RUnlock()
 	return false
 }
