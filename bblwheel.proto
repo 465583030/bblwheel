@@ -29,6 +29,8 @@ message Service {
         UNAUTHORIZE = 5;
     }
     Status status = 12;
+    Stats Stats  =13;
+    string Error = 14;
 }
 
 message ConfigEntry {
@@ -37,7 +39,7 @@ message ConfigEntry {
 }
 
 message Config {
-    repeated ConfigEntry Itmes = 1;
+    repeated ConfigEntry Items = 1;
 }
 
 message UpdateConfigReq {
@@ -46,14 +48,7 @@ message UpdateConfigReq {
     Config config = 3;
 }
 
-message RegisterResult {
-    repeated Service DependentServices = 1;
-    map<string,Config> DependentConfigs = 2;
-    int32 Result = 3;
-    string Desc = 4;
-}
-
-message Statistics {
+message Stats {
     string ServiceID = 1;
     string ServiceName = 2;
     int64 Count = 3;
@@ -72,19 +67,21 @@ message Event {
     enum EventType {
         DISCOVERY = 0;
         CONFIGUPDATE = 1;
-        STATISTICS = 2;
+        REGISTER_RESULT = 2;
+        KEEPALIVE = 3;
     }
     EventType Type = 1;
-    Service Service = 2;
+    repeated Service Service = 2;
     ConfigEntry Item = 3;
-    Statistics Stat = 4;
+    map<string,Config> Configs = 4;
+    string Desc = 5;
 }
 
 
 service BblWheel {
-  rpc Register(Service) returns (RegisterResult);
+  rpc Register(Service) returns (stream Event);
   rpc Unregister(Service) returns (Void);
+  rpc Online(Service) returns (Void);
   rpc UpdateStatus(Service) returns (Void);
   rpc UpdateConfig(UpdateConfigReq) returns (Void);
-  rpc KeepAlive(stream Event) returns (stream Event);
 }

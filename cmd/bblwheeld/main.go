@@ -7,5 +7,5 @@ import (
 
 func main() {
 	flag.Parse()
-	bblwheel.ListenAndServe()
+	bblwheel.StartWheel()
 }

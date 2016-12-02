@@ -7,11 +7,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	"strings"
-
 	"log"
 
-	v3 "github.com/coreos/etcd/clientv3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 )
@@ -31,23 +28,21 @@ type HandleCall func(*Request, *Response) error
 //HandleMessage ....
 type HandleMessage func(*Message) (*Message, error)
 
+var defrpc = NewServer()
+
 //ListenAndServe ....
 func ListenAndServe() error {
-	srv, err := NewServer()
-	if err != nil {
-		return err
-	}
-	return srv.Serve()
+	return defrpc.Serve()
 }
 
 //NewServer ....
-func NewServer() (*Server, error) {
+func NewServer() *Server {
 	bbl := &Server{
 		routerA: map[string]func(*Request, *Response) error{},
 		routerB: map[string]func(*Message) (*Message, error){},
 	}
 
-	return bbl, nil
+	return bbl
 }
 
 func (r *Request) newResponse() *Response {
@@ -74,24 +69,11 @@ func (s *Server) Serve() error {
 	if err != nil {
 		grpclog.Fatalf("failed to listen: %v", err)
 	}
-	return startEtcd(func() {
-		client, err := v3.New(v3.Config{
-			Endpoints:   strings.Split(ListenClientAddr, ","),
-			DialTimeout: OperateTimeout,
-		})
-		if err != nil {
-			panic(err)
-		}
-		cli = client
-		var opts []grpc.ServerOption
-		server := grpc.NewServer(opts...)
-		RegisterRpcServer(server, s)
-		log.Println("bblwheel server listen at", RPCListenAddr)
-		err = server.Serve(lis)
-		if err != nil {
-			panic(err)
-		}
-	})
+	var opts []grpc.ServerOption
+	server := grpc.NewServer(opts...)
+	RegisterRpcServer(server, s)
+	log.Println("bblwheel rpc server listen at", RPCListenAddr)
+	return server.Serve(lis)
 }
 
 //Call ....
@@ -109,7 +91,7 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 			return nil, err
 		}
 	}
-	return resp, fmt.Errorf("Path: %s, 处理函数不存在", req.Path)
+	return resp, fmt.Errorf("Path: %s, function not found", req.Path)
 }
 
 //Channel ....
@@ -140,4 +122,14 @@ func (s *Server) HandleCallFunc(path string, h HandleCall) {
 //HandleMessageFunc ....
 func (s *Server) HandleMessageFunc(path string, h HandleMessage) {
 	s.routerB[path] = h
+}
+
+//HandleCallFunc ....
+func HandleCallFunc(path string, h HandleCall) {
+	defrpc.routerA[path] = h
+}
+
+//HandleMessageFunc ....
+func HandleMessageFunc(path string, h HandleMessage) {
+	defrpc.routerB[path] = h
 }

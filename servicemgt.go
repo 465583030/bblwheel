@@ -1,175 +1,221 @@
 package bblwheel
 
-import "github.com/looplab/fsm"
+import (
+	"strings"
+	"sync"
 
-const (
-	//ServiceRegisterPrefix ....
-	ServiceRegisterPrefix = "/v1/bblwheel/service/register"
-	//ServiceConfigPrefix ....
-	ServiceConfigPrefix = "/v1/bblwheel/service/config"
-	//ServiceStatPrefix ....
-	ServiceStatPrefix = "/v1/bblwheel/service/stat"
-	//ServiceGrantPrefix ....
-	ServiceGrantPrefix = "/v1/bblwheel/service/grant"
+	"encoding/json"
+
+	"fmt"
+
+	"time"
+
+	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/mvcc/mvccpb"
+	"google.golang.org/grpc/grpclog"
 )
 
-var instances = multiinstance{entries: map[string]inslist{}}
+//DefaultTTL ....
+const DefaultTTL = 30
 
-func loadAndWatchService() {
+var srvmgt *servicemgt
 
+func startServiceWatcher() {
+	srvmgt = &servicemgt{}
+	go srvmgt.watch()
+	go srvmgt.keepalive()
 }
 
-func registerService(srv *Service) (*serviceInstance, error) {
-	var ins *serviceInstance
-	// if instances.e; has {
-
-	// } else {
-	// 	ins = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), done: make(chan struct{}, 1)}
-	// 	instances[srv.Name+"/"+srv.ID] = []*serviceInstance{ins}
-	// 	ins.start()
-	// }
-	return ins, nil
+type serviceListener interface {
+	onUpdate(*Service)
+	onDelete(string, string)
+	onKeepAlive()
+}
+type servicemgt struct {
+	once     Once
+	lock     sync.RWMutex
+	observer serviceListener
 }
 
-func unregisterService(id, name string) {
-	if instances.exist(id, name) {
-		instances.remove(id, name)
+func (s *servicemgt) setObserver(obs serviceListener) {
+	s.observer = obs
+}
+
+func (s *servicemgt) register(srv *Service) error {
+	if srv.Name == "" {
+		return fmt.Errorf("Service.Name is required")
 	}
-	DelKv(registerKey(name, id))
+	if srv.ID == "" {
+		return fmt.Errorf("Service.ID is required")
+	}
+	resp, err := GetWithPrfix(registerKey(srv.Name))
+	if err != nil {
+		return err
+	}
+	if resp.Count == 0 {
+		b, err := json.MarshalIndent(srv, "", "  ")
+		if err != nil {
+			return err
+		}
+		return PutKvWithTTL(registerKey(srv.Name, srv.ID), string(b), DefaultTTL)
+	}
+	var other = Service{}
+	err = json.Unmarshal(resp.Kvs[0].Value, &other)
+	if err != nil {
+		return err
+	}
+	if other.Single {
+		return fmt.Errorf("service %v is single", srv.Name)
+	}
+	b, err := json.MarshalIndent(srv, "", "  ")
+	if err != nil {
+		return err
+	}
+	return PutKvWithTTL(registerKey(srv.Name, srv.ID), string(b), DefaultTTL)
 }
 
-type serviceInstance struct {
-	srv            *Service
-	lastActiveTime int64
-	ch             BblWheel_KeepAliveServer
-	done           chan struct{}
-	fsm            *fsm.FSM
+func (s *servicemgt) unregister(id, name string) error {
+	if err := DelKv(registerKey(name, id)); err != nil {
+		return err
+	}
+	return DelKv(statKey(name, id))
 }
 
-func (ins *serviceInstance) dependentService() []*Service {
-	return nil
+func (s *servicemgt) update(srv *Service) error {
+	if srv.Name == "" {
+		return fmt.Errorf("Service.Name is required")
+	}
+	if srv.ID == "" {
+		return fmt.Errorf("Service.ID is required")
+	}
+	resp, err := GetKv(registerKey(srv.Name))
+	if err != nil {
+		return err
+	}
+	if resp.Count == 0 {
+		return fmt.Errorf("Service %s/%s not found", srv.Name, srv.ID)
+	}
+	var o = Service{}
+	err = json.Unmarshal(resp.Kvs[0].Value, &o)
+	if err != nil {
+		return err
+	}
+	if o.ID != srv.ID {
+		return fmt.Errorf("error Service.ID %s <> %s", o.ID, srv.ID)
+	}
+	if o.Name != srv.Name {
+		return fmt.Errorf("error Service.Name %s <> %s", o.Name, srv.Name)
+	}
+	if o.Status == Service_ONLINE {
+		b, err := json.MarshalIndent(srv, "", "  ")
+		if err != nil {
+			return err
+		}
+		return PutKvWithTTL(registerKey(srv.Name, srv.ID), string(b), DefaultTTL)
+	}
+	srv.Status = o.Status
+	b, err := json.MarshalIndent(srv, "", "  ")
+	if err != nil {
+		return err
+	}
+	return PutKvWithTTL(registerKey(srv.Name, srv.ID), string(b), DefaultTTL)
+}
+func (s *servicemgt) findService(name, id string) (*Service, error) {
+	resp, err := GetKv(registerKey(name, id))
+	if err != nil {
+		return nil, err
+	}
+	if resp.Count == 0 {
+		return nil, nil
+	}
+	var other = Service{}
+	err = json.Unmarshal(resp.Kvs[0].Value, &other)
+	if err != nil {
+		return nil, err
+	}
+	if other.ID != id {
+		return nil, fmt.Errorf("error Service.ID %s <> %s", other.ID, id)
+	}
+	if other.Name != name {
+		return nil, fmt.Errorf("error Service.Name %s <> %s", other.Name, name)
+	}
+	return &other, nil
 }
 
-func (ins *serviceInstance) dependentConfig() map[string]*Config {
-	return nil
+func (s *servicemgt) findServiceList(names []string) ([]*Service, error) {
+	var list = []*Service{}
+	for _, name := range names {
+		resp, err := GetWithPrfix(registerKey(name))
+		if err != nil {
+			return list, err
+		}
+		for _, kv := range resp.Kvs {
+			o := Service{}
+			err = json.Unmarshal(kv.Value, &o)
+			if err != nil {
+				return list, err
+			}
+			if o.Name != name {
+				return list, fmt.Errorf("error Service.Name %s <> %s", o.Name, name)
+			}
+			list = append(list, &o)
+		}
+	}
+	return list, nil
 }
-
-func (ins *serviceInstance) putConfig(conf *Config) {
-
-}
-
-func (ins *serviceInstance) watch(ch BblWheel_KeepAliveServer) {
-
-}
-
-func (ins *serviceInstance) reset() {
-	ins.stop()
-	ins.ch.Context().Done()
-	ins.start()
-}
-
-func (ins *serviceInstance) start() {
+func (s *servicemgt) keepalive() {
 	for {
-
-	}
-}
-
-func (ins *serviceInstance) stop() {
-	ins.done <- struct{}{}
-}
-
-type inslist []*serviceInstance
-
-func (l inslist) exist(id string) bool {
-	for _, ins := range l {
-		if ins.srv.ID == id {
-			return true
+		grpclog.Println("keepalive")
+		ch, err := KeepAlive(DefaultTTL)
+		if err != nil {
+			panic(err)
 		}
-	}
-	return false
-}
-
-func (l inslist) get(id string) *serviceInstance {
-	for _, ins := range l {
-		if ins.srv.ID == id {
-			return ins
+		for _ = range ch {
+			//grpclog.Printf("lease %016x keepalived with TTL(%d)\n", resp.ID, resp.TTL)
+			if s.observer != nil {
+				s.observer.onKeepAlive()
+			}
 		}
+		grpclog.Println("keepalive", "lease expired or revoked.")
+		time.Sleep(1 * time.Second)
 	}
-	return nil
-}
 
-func (l inslist) add(ins *serviceInstance) {
-	l = append(l, ins)
 }
-
-func (l inslist) remove(id string) {
-	var j = 0
-	for i, ins := range l {
-		if ins.srv.ID == id {
-			j = i
-			break
+func (s *servicemgt) watch() {
+	s.once.Do(func() {
+		grpclog.Println("watch register")
+		var err error
+		err = WaitPrefixEvents(ServiceRegisterPrefix+"/",
+			[]mvccpb.Event_EventType{mvccpb.PUT, mvccpb.DELETE},
+			func(event *clientv3.Event) {
+				key := strings.SplitN(strings.TrimPrefix(string(event.Kv.Key), ServiceRegisterPrefix+"/"), "/", 2)
+				///v1/bblwheel/service/register/mysql/001 add
+				///v1/bblwheel/service/register/mysql/002 add
+				///v1/bblwheel/service/register/srvA/001 aaa
+				///v1/bblwheel/service/register/srvA/002 aaa
+				if len(key) != 2 || key[0] == "" || key[1] == "" {
+					grpclog.Println("invalid service info", string(event.Kv.Key), string(event.Kv.Value))
+					return
+				}
+				if event.Type == mvccpb.PUT {
+					if s.observer != nil {
+						var other = Service{}
+						err = json.Unmarshal(event.Kv.Value, &other)
+						if err != nil {
+							grpclog.Println(err)
+							grpclog.Println(string(event.Kv.Key), string(event.Kv.Value))
+							return
+						}
+						s.observer.onUpdate(&other)
+					}
+				} else if event.Type == mvccpb.DELETE {
+					if s.observer != nil {
+						s.observer.onDelete(key[0], key[1])
+					}
+				}
+			})
+		if err != nil {
+			grpclog.Fatalln("watch register", err)
 		}
-	}
-	l = append(l[:j], l[j+1:]...)
-}
-
-type multiinstance struct {
-	entries map[string]inslist
-}
-
-func (m *multiinstance) get(id, name string) *serviceInstance {
-	if insl, has := m.entries[name]; has {
-		return insl.get(id)
-	}
-	return nil
-}
-
-func (m *multiinstance) getList(name string) inslist {
-	if insl, has := m.entries[name]; has {
-		return insl
-	}
-	return nil
-}
-
-func (m *multiinstance) exist(id, name string) bool {
-	if insl, has := m.entries[name]; has {
-		return insl.exist(id)
-	}
-	return false
-}
-
-func (m *multiinstance) put(ins *serviceInstance) {
-	if insl, has := m.entries[ins.srv.Name]; has {
-		insl.add(ins)
-	} else {
-		m.entries[ins.srv.Name] = inslist{ins}
-	}
-}
-
-func (m *multiinstance) remove(id, name string) {
-	if insl, has := m.entries[name]; has {
-		insl.remove(id)
-	}
-}
-
-func registerKey(suffix ...string) string {
-	return joinKey(ServiceRegisterPrefix, suffix...)
-}
-func configKey(suffix ...string) string {
-	return joinKey(ServiceConfigPrefix, suffix...)
-}
-func statKey(suffix ...string) string {
-	return joinKey(ServiceStatPrefix, suffix...)
-}
-
-func joinKey(prefix string, suffix ...string) string {
-	key := prefix
-	for _, s := range suffix {
-		if "/" == s {
-			key = key + s
-		} else {
-			key = "/" + s
-		}
-	}
-	return key
+	})
 }

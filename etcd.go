@@ -15,6 +15,24 @@ const (
 	OperateTimeout = 5 * time.Second
 )
 
+var cli *v3.Client
+
+func etcdClient(endpoints []string, uname, passwd string) *v3.Client {
+	for {
+		cli, err := v3.New(v3.Config{
+			Endpoints:   endpoints,
+			DialTimeout: OperateTimeout,
+			Username:    uname,
+			Password:    passwd,
+		})
+
+		if err == nil {
+			return cli
+		}
+		time.Sleep(OperateTimeout)
+	}
+}
+
 //GetString ....
 func GetString(key string) (string, error) {
 	resp, err := cli.Get(context.TODO(), key, v3.WithLimit(1))
@@ -153,9 +171,18 @@ func WaitEvents(key string, rev int64, evs []mvccpb.Event_EventType, onEvent fun
 	return waitEvents(wc, evs, onEvent)
 }
 
-//WaitPrefixEvents ....
-func WaitPrefixEvents(prefix string, rev int64, evs []mvccpb.Event_EventType, onEvent func(*v3.Event)) error {
+//WaitPrefixEventsWithRev ....
+func WaitPrefixEventsWithRev(prefix string, rev int64, evs []mvccpb.Event_EventType, onEvent func(*v3.Event)) error {
 	wc := cli.Watch(context.Background(), prefix, v3.WithPrefix(), v3.WithRev(rev))
+	if wc == nil {
+		return errors.New("error no watcher")
+	}
+	return waitEvents(wc, evs, onEvent)
+}
+
+//WaitPrefixEvents ....
+func WaitPrefixEvents(prefix string, evs []mvccpb.Event_EventType, onEvent func(*v3.Event)) error {
+	wc := cli.Watch(context.Background(), prefix, v3.WithPrefix())
 	if wc == nil {
 		return errors.New("error no watcher")
 	}

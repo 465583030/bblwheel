@@ -59,7 +59,7 @@ func parseUrls(rawurls string) ([]url.URL, error) {
 	}
 	return rurls, nil
 }
-func startEtcd(ready func()) error {
+func startEtcd(ready func() error) error {
 	cfg := embed.NewConfig()
 	cfg.Name = EtcdName
 	lpurls, err := parseUrls(ListenPeerAddr)

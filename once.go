@@ -9,7 +9,7 @@ type Once struct {
 }
 
 //Do ....
-func (o *Once) Do(f func()) {
+func (o Once) Do(f func()) {
 	if atomic.LoadInt32(&o.done) == 1 {
 		return
 	}

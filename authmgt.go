@@ -10,20 +10,20 @@ import (
 	"google.golang.org/grpc/grpclog"
 )
 
-var authSrv *authService
+var aumgt *authmgt
 
-func loadAndWatchAuthTable() {
-	authSrv = &authService{table: map[string][]string{}}
-	go authSrv.watch()
+func startAuthWatcher() {
+	aumgt = &authmgt{table: map[string][]string{}}
+	go aumgt.watch()
 }
 
-type authService struct {
+type authmgt struct {
 	table map[string][]string
 	lock  sync.RWMutex
 	once  Once
 }
 
-func (t *authService) has(from, to string) bool {
+func (t *authmgt) has(from, to string) bool {
 	t.lock.RLock()
 	if tt, has := t.table[from]; has {
 		for _, v := range tt {
@@ -38,7 +38,7 @@ func (t *authService) has(from, to string) bool {
 	return false
 }
 
-func (t *authService) cancel(from, to string) {
+func (t *authmgt) cancel(from, to string) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if tt, has := t.table[from]; has {
@@ -53,7 +53,7 @@ func (t *authService) cancel(from, to string) {
 	}
 }
 
-func (t *authService) add(from, to string) {
+func (t *authmgt) add(from, to string) {
 	if t.has(from, to) {
 		return
 	}
@@ -66,8 +66,9 @@ func (t *authService) add(from, to string) {
 		t.table[from] = tt
 	}
 }
-func (t *authService) watch() {
+func (t *authmgt) watch() {
 	t.once.Do(func() {
+		grpclog.Println("load grant table")
 		t.table = map[string][]string{}
 		resp, err := GetWithPrfix(ServiceGrantPrefix)
 		if err != nil {
@@ -76,6 +77,9 @@ func (t *authService) watch() {
 		}
 		for _, kv := range resp.Kvs {
 			name := strings.SplitN(strings.TrimPrefix(string(kv.Key), ServiceGrantPrefix+"/"), "/", 2)
+			///v1/bblwheel/service/grant/srvA/srvB 1
+			///v1/bblwheel/service/grant/srvA/srvC 1
+			///v1/bblwheel/service/grant/srvA/srvD 1
 			if len(name) != 2 || name[0] == "" || name[1] == "" {
 				grpclog.Println("invalid grant info")
 				continue
@@ -85,8 +89,10 @@ func (t *authService) watch() {
 				t.add(name[0], name[1])
 			}
 		}
-		err = WaitPrefixEvents(ServiceGrantPrefix,
-			resp.Header.Revision,
+		grpclog.Println("load grant table", "ok")
+		grpclog.Println("watch grant table")
+		err = WaitPrefixEvents(ServiceGrantPrefix+"/",
+			//resp.Header.Revision,
 			[]mvccpb.Event_EventType{mvccpb.PUT, mvccpb.DELETE},
 			func(event *clientv3.Event) {
 				name := strings.SplitN(strings.TrimPrefix(string(event.Kv.Key), ServiceGrantPrefix+"/"), "/", 2)
@@ -106,7 +112,7 @@ func (t *authService) watch() {
 				}
 			})
 		if err != nil {
-			grpclog.Fatalln(err)
+			grpclog.Fatalln("watch grant table", err)
 		}
 	})
 }
