@@ -12,15 +12,25 @@ import (
 
 var aumgt *authmgt
 
+type authListener interface {
+	onGrant(string, string)
+	onCancel(string, string)
+}
+
 func startAuthWatcher() {
 	aumgt = &authmgt{table: map[string][]string{}}
 	go aumgt.watch()
 }
 
 type authmgt struct {
-	table map[string][]string
-	lock  sync.RWMutex
-	once  Once
+	table    map[string][]string
+	lock     sync.RWMutex
+	once     Once
+	observer authListener
+}
+
+func (t *authmgt) setObserver(l authListener) {
+	t.observer = l
 }
 
 func (t *authmgt) has(from, to string) bool {
@@ -51,6 +61,7 @@ func (t *authmgt) cancel(from, to string) {
 		}
 		tt = append(tt[:j], tt[:j+1]...)
 	}
+	t.observer.onCancel(from, to)
 }
 
 func (t *authmgt) add(from, to string) {
@@ -65,6 +76,7 @@ func (t *authmgt) add(from, to string) {
 		tt = []string{to}
 		t.table[from] = tt
 	}
+	t.observer.onGrant(from, to)
 }
 func (t *authmgt) watch() {
 	t.once.Do(func() {

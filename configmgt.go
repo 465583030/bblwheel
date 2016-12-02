@@ -27,6 +27,7 @@ type configmgt struct {
 func (c *configmgt) setObserver(fn func(string, *ConfigEntry)) {
 	c.observer = fn
 }
+
 func (c *configmgt) get(keys []string) map[string]*Config {
 	var result = map[string]*Config{}
 	for _, key := range keys {

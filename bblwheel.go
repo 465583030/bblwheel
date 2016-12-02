@@ -2,18 +2,14 @@ package bblwheel
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
-
-	"golang.org/x/net/context"
-
+	"runtime"
 	"sync"
-
 	"time"
 
-	"fmt"
-
-	"runtime"
+	"golang.org/x/net/context"
 
 	"github.com/looplab/fsm"
 	"google.golang.org/grpc"
@@ -56,6 +52,7 @@ func StartWheel() error {
 		}
 		confmgt.setObserver(srv.onConfigChanged)
 		srvmgt.observer = srv
+		aumgt.observer = srv
 		return srv.serve()
 	})
 
@@ -171,6 +168,38 @@ func (s *Wheel) serve() error {
 	return server.Serve(lis)
 }
 
+func (s *Wheel) onGrant(from string, to string) {
+	///v1/bblwheel/service/grant/a/b 1
+	for _, ins := range s.instances {
+		for _, n := range ins.srv.DependentServices {
+			if n == from && ins.srv.Name == to {
+				srvs := []*Service{}
+				for _, o := range s.instances {
+					if o.srv.Name == from {
+						srvs = append(srvs, o.srv)
+					}
+				}
+				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srvs})
+			}
+		}
+	}
+}
+func (s *Wheel) onCancel(from string, to string) {
+	for _, ins := range s.instances {
+		for _, n := range ins.srv.DependentServices {
+			if n == from && ins.srv.Name == to {
+				srvs := []*Service{}
+				for _, o := range s.instances {
+					if o.srv.Name == from {
+						srvs = append(srvs, &Service{ID: o.srv.ID, Name: o.srv.Name, Status: Service_UNAUTHORIZE})
+					}
+				}
+				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srvs})
+			}
+		}
+	}
+}
+
 func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 	grpclog.Println("onConfigChanged")
 	s.lock.RLock()
@@ -193,7 +222,7 @@ func (s *Wheel) onUpdate(srv *Service) {
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == srv.Name {
-				if oins, has := s.instances[ins.srv.key()]; has {
+				if oins, has := s.instances[ins.srv.key()]; has && oins.srv.Status != srv.Status && aumgt.has(srv.Name, n) {
 					go oins.notify(&Event{Type: Event_DISCOVERY, Service: []*Service{srv}})
 				}
 			}
@@ -202,9 +231,8 @@ func (s *Wheel) onUpdate(srv *Service) {
 }
 func (s *Wheel) onDelete(name, id string) {
 	grpclog.Println("onDelete")
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == name {
@@ -214,6 +242,9 @@ func (s *Wheel) onDelete(name, id string) {
 			}
 		}
 	}
+	s.lock.Lock()
+	delete(s.instances, name+"/"+id)
+	s.lock.Unlock()
 }
 
 var kve = &Event{Type: Event_KEEPALIVE}
@@ -239,88 +270,12 @@ type serviceInstance struct {
 
 func (ins *serviceInstance) notify(ev *Event) {
 	if err := ins.ch.Send(kve); err != nil {
+		grpclog.Println(err)
 		if err := srvmgt.unregister(ins.srv.ID, ins.srv.Name); err != nil {
 			grpclog.Println(err)
 		}
-		ins.wheel.lock.Lock()
-		delete(ins.wheel.instances, ins.srv.key())
-		ins.wheel.lock.Unlock()
 	}
 }
-
-// type inslist []*serviceInstance
-
-// func (l inslist) exist(id string) bool {
-// 	for _, ins := range l {
-// 		if ins.srv.ID == id {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// func (l inslist) get(id string) *serviceInstance {
-// 	for _, ins := range l {
-// 		if ins.srv.ID == id {
-// 			return ins
-// 		}
-// 	}
-// 	return nil
-// }
-
-// func (l inslist) add(ins *serviceInstance) {
-// 	l = append(l, ins)
-// }
-
-// func (l inslist) remove(id string) {
-// 	var j = 0
-// 	for i, ins := range l {
-// 		if ins.srv.ID == id {
-// 			j = i
-// 			break
-// 		}
-// 	}
-// 	l = append(l[:j], l[j+1:]...)
-// }
-
-// type multiinstance struct {
-// 	entries map[string]inslist
-// }
-
-// func (m *multiinstance) get(id, name string) *serviceInstance {
-// 	if insl, has := m.entries[name]; has {
-// 		return insl.get(id)
-// 	}
-// 	return nil
-// }
-
-// func (m *multiinstance) getList(name string) inslist {
-// 	if insl, has := m.entries[name]; has {
-// 		return insl
-// 	}
-// 	return nil
-// }
-
-// func (m *multiinstance) exist(id, name string) bool {
-// 	if insl, has := m.entries[name]; has {
-// 		return insl.exist(id)
-// 	}
-// 	return false
-// }
-
-// func (m *multiinstance) put(ins *serviceInstance) {
-// 	if insl, has := m.entries[ins.srv.Name]; has {
-// 		insl.add(ins)
-// 	} else {
-// 		m.entries[ins.srv.Name] = inslist{ins}
-// 	}
-// }
-
-// func (m *multiinstance) remove(id, name string) {
-// 	if insl, has := m.entries[name]; has {
-// 		insl.remove(id)
-// 	}
-// }
 
 func registerKey(suffix ...string) string {
 	return joinKey(ServiceRegisterPrefix, suffix...)
