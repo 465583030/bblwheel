@@ -29,10 +29,6 @@ type authmgt struct {
 	observer authListener
 }
 
-func (t *authmgt) setObserver(l authListener) {
-	t.observer = l
-}
-
 func (t *authmgt) has(from, to string) bool {
 	t.lock.RLock()
 	if tt, has := t.table[from]; has {

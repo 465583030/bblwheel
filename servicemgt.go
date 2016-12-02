@@ -37,10 +37,6 @@ type servicemgt struct {
 	observer serviceListener
 }
 
-func (s *servicemgt) setObserver(obs serviceListener) {
-	s.observer = obs
-}
-
 func (s *servicemgt) register(srv *Service) error {
 	if srv.Name == "" {
 		return fmt.Errorf("Service.Name is required")

@@ -50,7 +50,7 @@ func StartWheel() error {
 		if err != nil {
 			return err
 		}
-		confmgt.setObserver(srv.onConfigChanged)
+		confmgt.observer = srv.onConfigChanged
 		srvmgt.observer = srv
 		aumgt.observer = srv
 		return srv.serve()
