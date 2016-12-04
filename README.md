@@ -26,5 +26,5 @@
 
 ###客户端
 - [java客户端和例子](https://github.com/gqf2008/bblwheel-java)
-- [go客户端和例子](https://github.com/gqf2008/bblwheel/client)
-- [bblagent](https://github.com/gqf2008/bblwheel/cmd/bblagent)
+- [go客户端和例子](https://github.com/gqf2008/bblwheel/tree/master/client)
+- [bblagent](https://github.com/gqf2008/bblwheel/tree/master/cmd/bblagent)
