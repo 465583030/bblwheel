@@ -76,7 +76,17 @@ func (s *Wheel) LookupConfig(_ context.Context, req *LookupConfigReq) (*LookupCo
 
 //LookupService ....
 func (s *Wheel) LookupService(_ context.Context, req *LookupServiceReq) (*LookupServiceResp, error) {
-	return &LookupServiceResp{Services: srvmgt.findServiceList(req.DependentServices)}, nil
+	resp := &LookupServiceResp{Services: []*Service{}}
+	if len(req.DependentServices) > 0 {
+		var dep = []string{}
+		for _, name := range req.DependentServices {
+			if aumgt.has(name, req.ServiceName) {
+				dep = append(dep, name)
+			}
+		}
+		resp.Services = srvmgt.findServiceList(dep)
+	}
+	return resp, nil
 }
 
 //Register ....
@@ -91,10 +101,12 @@ func (s *Wheel) Register(_ context.Context, srv *Service) (*RegisterResult, erro
 	if len(srv.DependentServices) > 0 {
 		var dep = []string{}
 		for _, name := range srv.DependentServices {
+			grpclog.Println("DependentServices", name, srv.Name)
 			if aumgt.has(name, srv.Name) {
 				dep = append(dep, name)
 			}
 		}
+		grpclog.Println("findServiceList", dep)
 		res.Service = srvmgt.findServiceList(dep)
 	}
 	if len(srv.DependentConfigs) > 0 {
@@ -192,22 +204,17 @@ func (s *Wheel) serve() error {
 func (s *Wheel) onGrant(from string, to string) {
 	///v1/bblwheel/service/grant/serviceA/testService1 1
 	grpclog.Println("onGrant", from, to)
+	srvs := srvmgt.findServiceList([]string{from})
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == from && ins.srv.Name == to {
-				srvs := []*Service{}
-				for _, o := range s.instances {
-					if o.srv.Name == from {
-						srvs = append(srvs, o.srv)
-					}
-				}
-				go func(srvs []*Service) {
+				go func() {
 					for _, srv := range srvs {
 						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 					}
-				}(srvs)
+				}()
 			}
 		}
 	}
@@ -216,20 +223,15 @@ func (s *Wheel) onCancel(from string, to string) {
 	grpclog.Println("onCancel", from, to)
 	s.lock.RLock()
 	defer s.lock.RUnlock()
+	srvs := srvmgt.findServiceList([]string{from})
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == from && ins.srv.Name == to {
-				srvs := []*Service{}
-				for _, o := range s.instances {
-					if o.srv.Name == from {
-						srvs = append(srvs, &Service{ID: o.srv.ID, Name: o.srv.Name, Status: Service_UNAUTHORIZE})
-					}
-				}
-				go func(srvs []*Service) {
+				go func() {
 					for _, srv := range srvs {
-						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
+						ins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: srv.ID, Name: srv.Name, Status: Service_UNAUTHORIZE}})
 					}
-				}(srvs)
+				}()
 			}
 		}
 	}
@@ -280,8 +282,6 @@ func (s *Wheel) onDelete(name, id string) {
 	delete(s.instances, name+"/"+id)
 }
 
-var kve = &Event{Type: Event_KEEPALIVE}
-
 func (s *Wheel) onKeepAlive() {
 	grpclog.Printf("NumGoroutine %d NumCPU %d\n", runtime.NumGoroutine(), runtime.NumCPU())
 }
@@ -327,11 +327,11 @@ func (ins *serviceInstance) serve() error {
 }
 
 func (ins *serviceInstance) notify(ev *Event) {
-	grpclog.Println(ins.srv.key(), "notify", ev)
 	if ins.ch == nil {
 		return
 	}
-	if err := ins.ch.Send(kve); err != nil {
+	grpclog.Println("notify", ins.srv.key(), ev)
+	if err := ins.ch.Send(ev); err != nil {
 		grpclog.Println("serviceInstance.notify", err)
 		if err := srvmgt.unregister(ins.srv.ID, ins.srv.Name); err != nil {
 			grpclog.Println("srvmgt.unregister", err)

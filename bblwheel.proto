@@ -93,7 +93,9 @@ message LookupConfigResp {
 }
 
 message LookupServiceReq {
-    repeated string DependentServices = 1;
+    string ServiceID = 1;
+    string ServiceName = 2;
+    repeated string DependentServices = 3;
 }
 message LookupServiceResp {
     repeated Service Services = 1;

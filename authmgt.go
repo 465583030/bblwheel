@@ -18,12 +18,12 @@ type authListener interface {
 }
 
 func startAuthWatcher() {
-	aumgt = &authmgt{table: map[string][]string{}}
+	aumgt = &authmgt{table: map[string]bool{}}
 	go aumgt.watch()
 }
 
 type authmgt struct {
-	table    map[string][]string
+	table    map[string]bool
 	lock     sync.RWMutex
 	once     Once
 	observer authListener
@@ -31,50 +31,31 @@ type authmgt struct {
 
 func (t *authmgt) has(from, to string) bool {
 	t.lock.RLock()
-	if tt, has := t.table[from]; has {
-		for _, v := range tt {
-			if v == to {
-				t.lock.RUnlock()
-				return true
-			}
-		}
+	tt, has := t.table[from+"/"+to]
+	if has {
+		t.lock.RUnlock()
+		return tt
 	}
-
 	t.lock.RUnlock()
 	return false
 }
 
 func (t *authmgt) cancel(from, to string) {
 	t.lock.Lock()
-	if tt, has := t.table[from]; has {
-		var j = 0
-		for i, v := range tt {
-			if v == to {
-				j = i
-				break
-			}
-		}
-		tt = append(tt[:j], tt[:j+1]...)
-	}
+	delete(t.table, from+"/"+to)
 	t.lock.Unlock()
 	t.observer.onCancel(from, to)
 }
 
 func (t *authmgt) add(from, to string) {
 	t.lock.Lock()
-	if tt, has := t.table[from]; has {
-		tt = append(tt, to)
-	} else {
-		tt = []string{to}
-		t.table[from] = tt
-	}
+	t.table[from+"/"+to] = true
 	t.lock.Unlock()
 	t.observer.onGrant(from, to)
 }
 func (t *authmgt) watch() {
 	t.once.Do(func() {
 		grpclog.Println("load grant table")
-		t.table = map[string][]string{}
 		resp, err := GetWithPrfix(ServiceGrantPrefix)
 		if err != nil {
 			grpclog.Fatalln(err)
@@ -89,6 +70,7 @@ func (t *authmgt) watch() {
 				grpclog.Println("invalid grant info")
 				continue
 			}
+			grpclog.Println("Grant", name[0], "to", name[1], kv.Value)
 			val, _ := strconv.ParseBool(string(kv.Value))
 			if val {
 				t.add(name[0], name[1])
