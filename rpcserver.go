@@ -28,15 +28,15 @@ type HandleCall func(*Request, *Response) error
 //HandleMessage ....
 type HandleMessage func(*Message) (*Message, error)
 
-var defrpc = NewServer()
+var defrpc = NewRPCServer()
 
 //ListenAndServe ....
 func ListenAndServe() error {
 	return defrpc.Serve()
 }
 
-//NewServer ....
-func NewServer() *Server {
+//NewRPCServer ....
+func NewRPCServer() *Server {
 	bbl := &Server{
 		routerA: map[string]func(*Request, *Response) error{},
 		routerB: map[string]func(*Message) (*Message, error){},

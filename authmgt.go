@@ -46,7 +46,6 @@ func (t *authmgt) has(from, to string) bool {
 
 func (t *authmgt) cancel(from, to string) {
 	t.lock.Lock()
-	defer t.lock.Unlock()
 	if tt, has := t.table[from]; has {
 		var j = 0
 		for i, v := range tt {
@@ -57,21 +56,19 @@ func (t *authmgt) cancel(from, to string) {
 		}
 		tt = append(tt[:j], tt[:j+1]...)
 	}
+	t.lock.Unlock()
 	t.observer.onCancel(from, to)
 }
 
 func (t *authmgt) add(from, to string) {
-	if t.has(from, to) {
-		return
-	}
 	t.lock.Lock()
-	defer t.lock.Unlock()
 	if tt, has := t.table[from]; has {
 		tt = append(tt, to)
 	} else {
 		tt = []string{to}
 		t.table[from] = tt
 	}
+	t.lock.Unlock()
 	t.observer.onGrant(from, to)
 }
 func (t *authmgt) watch() {

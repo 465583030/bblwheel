@@ -6,7 +6,12 @@ option optimize_for = SPEED;
 
 package bblwheel;
 
-message Void{}
+message Void {}
+message RegisterResult{
+    string Desc = 1;
+    repeated Service Service = 2;
+    map<string,Config> Configs = 3;
+}
 
 message Service {
     string ID = 1;
@@ -61,27 +66,43 @@ message Stats {
     int64 MaxRespTime = 10;
     int64 LastActiveTime = 11;
     map<string, string> Other = 12;
+    string Errors = 13;
 }
 
 message Event {
     enum EventType {
-        DISCOVERY = 0;
-        CONFIGUPDATE = 1;
-        REGISTER_RESULT = 2;
-        KEEPALIVE = 3;
+        DISCOVERY = 0;  //s->c
+        CONFIGUPDATE = 1; //s->c
+        REGISTER_RESULT = 2; //s->c
+        KEEPALIVE = 3; //c->s
+        CONTROL = 4; //s->c
+        EXEC = 5; //s->c
     }
     EventType Type = 1;
-    repeated Service Service = 2;
+    Service Service = 2;
     ConfigEntry Item = 3;
-    map<string,Config> Configs = 4;
-    string Desc = 5;
+    string Command = 4; //start,restart,stop
 }
 
+message LookupConfigReq {
+    repeated string DependentConfigs = 1;
+}
 
+message LookupConfigResp {
+    map<string,Config> Configs = 1;
+}
+
+message LookupServiceReq {
+    repeated string DependentServices = 1;
+}
+message LookupServiceResp {
+    repeated Service Services = 1;
+}
 service BblWheel {
-  rpc Register(Service) returns (stream Event);
-  rpc Unregister(Service) returns (Void);
-  rpc Online(Service) returns (Void);
-  rpc UpdateStatus(Service) returns (Void);
+  rpc LookupConfig(LookupConfigReq) returns (LookupConfigResp);
+  rpc LookupService(LookupServiceReq) returns (LookupServiceResp);
   rpc UpdateConfig(UpdateConfigReq) returns (Void);
+  rpc Register(Service) returns (RegisterResult);
+  rpc Unregister(Service) returns (Void);
+  rpc Events(stream Event) returns (stream Event);
 }

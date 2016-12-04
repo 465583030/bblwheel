@@ -38,6 +38,7 @@ type servicemgt struct {
 }
 
 func (s *servicemgt) register(srv *Service) error {
+	//grpclog.Println("servicemgt.register", srv)
 	if srv.Name == "" {
 		return fmt.Errorf("Service.Name is required")
 	}
@@ -60,7 +61,7 @@ func (s *servicemgt) register(srv *Service) error {
 	if err != nil {
 		return err
 	}
-	if other.Single {
+	if other.Single && other.Name == srv.Name {
 		return fmt.Errorf("service %v is single", srv.Name)
 	}
 	b, err := json.MarshalIndent(srv, "", "  ")
@@ -78,38 +79,34 @@ func (s *servicemgt) unregister(id, name string) error {
 }
 
 func (s *servicemgt) update(srv *Service) error {
+	//grpclog.Println("servicemgt.update", srv)
 	if srv.Name == "" {
 		return fmt.Errorf("Service.Name is required")
 	}
 	if srv.ID == "" {
 		return fmt.Errorf("Service.ID is required")
 	}
-	resp, err := GetKv(registerKey(srv.Name))
-	if err != nil {
-		return err
-	}
-	if resp.Count == 0 {
-		return fmt.Errorf("Service %s/%s not found", srv.Name, srv.ID)
-	}
-	var o = Service{}
-	err = json.Unmarshal(resp.Kvs[0].Value, &o)
-	if err != nil {
-		return err
-	}
-	if o.ID != srv.ID {
-		return fmt.Errorf("error Service.ID %s <> %s", o.ID, srv.ID)
-	}
-	if o.Name != srv.Name {
-		return fmt.Errorf("error Service.Name %s <> %s", o.Name, srv.Name)
-	}
-	if o.Status == Service_ONLINE {
-		b, err := json.MarshalIndent(srv, "", "  ")
-		if err != nil {
-			return err
-		}
-		return PutKvWithTTL(registerKey(srv.Name, srv.ID), string(b), DefaultTTL)
-	}
-	srv.Status = o.Status
+	// resp, err := GetKv(registerKey(srv.Name, srv.ID))
+	// if err != nil {
+	// 	return err
+	// }
+	// if resp.Count == 0 {
+	// 	return fmt.Errorf("Service %s/%s not found", srv.Name, srv.ID)
+	// }
+	// var o = Service{}
+	// err = json.Unmarshal(resp.Kvs[0].Value, &o)
+	// if err != nil {
+	// 	return err
+	// }
+	// if o.ID != srv.ID {
+	// 	return fmt.Errorf("error Service.ID %s <> %s", o.ID, srv.ID)
+	// }
+	// if o.Name != srv.Name {
+	// 	return fmt.Errorf("error Service.Name %s <> %s", o.Name, srv.Name)
+	// }
+	// if o.Status != Service_ONLINE {
+	// 	srv.Status = o.Status
+	// }
 	b, err := json.MarshalIndent(srv, "", "  ")
 	if err != nil {
 		return err
@@ -138,36 +135,38 @@ func (s *servicemgt) findService(name, id string) (*Service, error) {
 	return &other, nil
 }
 
-func (s *servicemgt) findServiceList(names []string) ([]*Service, error) {
+func (s *servicemgt) findServiceList(names []string) []*Service {
 	var list = []*Service{}
 	for _, name := range names {
 		resp, err := GetWithPrfix(registerKey(name))
 		if err != nil {
-			return list, err
+			grpclog.Println(err)
+			break
 		}
 		for _, kv := range resp.Kvs {
 			o := Service{}
 			err = json.Unmarshal(kv.Value, &o)
 			if err != nil {
-				return list, err
+				grpclog.Println(err)
+				continue
 			}
 			if o.Name != name {
-				return list, fmt.Errorf("error Service.Name %s <> %s", o.Name, name)
+				grpclog.Println(fmt.Errorf("error Service.Name %s <> %s", o.Name, name))
+				continue
 			}
 			list = append(list, &o)
 		}
 	}
-	return list, nil
+	return list
 }
 func (s *servicemgt) keepalive() {
 	for {
 		grpclog.Println("keepalive")
 		ch, err := KeepAlive(DefaultTTL)
 		if err != nil {
-			panic(err)
+			grpclog.Println(err)
 		}
 		for _ = range ch {
-			//grpclog.Printf("lease %016x keepalived with TTL(%d)\n", resp.ID, resp.TTL)
 			if s.observer != nil {
 				s.observer.onKeepAlive()
 			}

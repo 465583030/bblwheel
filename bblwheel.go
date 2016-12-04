@@ -3,6 +3,7 @@ package bblwheel
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"runtime"
@@ -59,7 +60,7 @@ func StartWheel() error {
 }
 
 func newWheel() (*Wheel, error) {
-	return &Wheel{}, nil
+	return &Wheel{instances: map[string]*serviceInstance{}}, nil
 }
 
 //Wheel ....
@@ -68,14 +69,24 @@ type Wheel struct {
 	lock      sync.RWMutex
 }
 
+//LookupConfig ....
+func (s *Wheel) LookupConfig(_ context.Context, req *LookupConfigReq) (*LookupConfigResp, error) {
+	return &LookupConfigResp{Configs: confmgt.get(req.DependentConfigs)}, nil
+}
+
+//LookupService ....
+func (s *Wheel) LookupService(_ context.Context, req *LookupServiceReq) (*LookupServiceResp, error) {
+	return &LookupServiceResp{Services: srvmgt.findServiceList(req.DependentServices)}, nil
+}
+
 //Register ....
-func (s *Wheel) Register(srv *Service, ch BblWheel_RegisterServer) error {
-	srv.Status = Service_INIT
-	res := &Event{}
+func (s *Wheel) Register(_ context.Context, srv *Service) (*RegisterResult, error) {
+	res := &RegisterResult{Desc: "SUCCESS"}
 	err := srvmgt.register(srv)
 	if err != nil {
 		res.Desc = err.Error()
-		return ch.Send(res)
+		grpclog.Println("Register.register", err)
+		return res, nil
 	}
 	if len(srv.DependentServices) > 0 {
 		var dep = []string{}
@@ -84,25 +95,17 @@ func (s *Wheel) Register(srv *Service, ch BblWheel_RegisterServer) error {
 				dep = append(dep, name)
 			}
 		}
-		deps, err := srvmgt.findServiceList(dep)
-		if err != nil {
-			res.Desc = err.Error()
-			return ch.Send(res)
-		}
-		res.Service = deps
+		res.Service = srvmgt.findServiceList(dep)
 	}
 	if len(srv.DependentConfigs) > 0 {
 		res.Configs = confmgt.get(srv.DependentConfigs)
 	}
 
-	if err := ch.Send(res); err != nil {
-		return err
-	}
-	ins := serviceInstance{srv: srv, ch: ch, lastActiveTime: time.Now().Unix(), wheel: s}
+	ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
 	s.lock.Lock()
 	s.instances[srv.key()] = &ins
 	s.lock.Unlock()
-	return nil
+	return res, nil
 }
 
 //Unregister ....
@@ -119,37 +122,55 @@ func (srv *Service) key() string {
 	return fmt.Sprintf("%s/%s", srv.Name, srv.ID)
 }
 
-//Online ....
-func (s *Wheel) Online(_ context.Context, srv *Service) (*Void, error) {
-	srv.Status = Service_ONLINE
-
-	err := srvmgt.register(srv)
-	if err != nil {
-		return &Void{}, err
-	}
-	s.lock.Lock()
-	if ins, has := s.instances[srv.key()]; has {
-		ins.srv = srv
-	}
-	s.lock.Unlock()
-	return &Void{}, nil
-}
-
-//UpdateStatus ....
-func (s *Wheel) UpdateStatus(ctx context.Context, srv *Service) (*Void, error) {
-	if err := srvmgt.update(srv); err != nil {
-		grpclog.Println(err)
-		return &Void{}, err
-	}
-	return &Void{}, nil
-}
-
 //UpdateConfig ....
-func (s *Wheel) UpdateConfig(ctx context.Context, req *UpdateConfigReq) (*Void, error) {
+func (s *Wheel) UpdateConfig(_ context.Context, req *UpdateConfigReq) (*Void, error) {
 	if err := confmgt.put(req.ServiceName, req.ServiceID, req.Config); err != nil {
 		grpclog.Println(err)
 	}
 	return &Void{}, nil
+}
+
+//Events ....
+func (s *Wheel) Events(ch BblWheel_EventsServer) error {
+	grpclog.Println("Wheel.Events channel", ch)
+	defer grpclog.Println("Events channel", ch, "exist")
+	ev, err := ch.Recv()
+	if err == io.EOF {
+		grpclog.Println("Wheel.Events", err)
+		return nil
+	}
+	if err != nil {
+		grpclog.Println("Wheel.Events", err)
+		return err
+	}
+	if ev.Type != Event_KEEPALIVE {
+		err = fmt.Errorf("Error Event.Type %s", Event_EventType_name[int32(ev.Type)])
+		grpclog.Println(err)
+		return err
+	}
+	srv := ev.Service
+	if srv == nil {
+		err = fmt.Errorf("Error Event.Service is nil")
+		grpclog.Println(err)
+		return err
+	}
+	s.lock.Lock()
+	ins, has := s.instances[srv.key()]
+	if !has {
+		s.lock.Unlock()
+		err = fmt.Errorf("Error Event.Service %s not registered", srv.key())
+		grpclog.Println(err)
+		return err
+	}
+	if ins.ch != nil {
+		s.lock.Unlock()
+		err = fmt.Errorf("Error Event.Service %s channel exist", srv.key())
+		grpclog.Println(err)
+		return err
+	}
+	ins.ch = ch
+	s.lock.Unlock()
+	return ins.serve()
 }
 
 //Serve ....
@@ -169,7 +190,10 @@ func (s *Wheel) serve() error {
 }
 
 func (s *Wheel) onGrant(from string, to string) {
-	///v1/bblwheel/service/grant/a/b 1
+	///v1/bblwheel/service/grant/serviceA/testService1 1
+	grpclog.Println("onGrant", from, to)
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == from && ins.srv.Name == to {
@@ -179,12 +203,19 @@ func (s *Wheel) onGrant(from string, to string) {
 						srvs = append(srvs, o.srv)
 					}
 				}
-				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srvs})
+				go func(srvs []*Service) {
+					for _, srv := range srvs {
+						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
+					}
+				}(srvs)
 			}
 		}
 	}
 }
 func (s *Wheel) onCancel(from string, to string) {
+	grpclog.Println("onCancel", from, to)
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == from && ins.srv.Name == to {
@@ -194,7 +225,11 @@ func (s *Wheel) onCancel(from string, to string) {
 						srvs = append(srvs, &Service{ID: o.srv.ID, Name: o.srv.Name, Status: Service_UNAUTHORIZE})
 					}
 				}
-				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srvs})
+				go func(srvs []*Service) {
+					for _, srv := range srvs {
+						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
+					}
+				}(srvs)
 			}
 		}
 	}
@@ -223,7 +258,7 @@ func (s *Wheel) onUpdate(srv *Service) {
 		for _, n := range ins.srv.DependentServices {
 			if n == srv.Name {
 				if oins, has := s.instances[ins.srv.key()]; has && oins.srv.Status != srv.Status && aumgt.has(srv.Name, n) {
-					go oins.notify(&Event{Type: Event_DISCOVERY, Service: []*Service{srv}})
+					go oins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 				}
 			}
 		}
@@ -237,42 +272,69 @@ func (s *Wheel) onDelete(name, id string) {
 		for _, n := range ins.srv.DependentServices {
 			if n == name {
 				if oins, has := s.instances[ins.srv.key()]; has {
-					go oins.notify(&Event{Type: Event_DISCOVERY, Service: []*Service{&Service{ID: id, Name: name, Status: Service_OFFLINE}}})
+					go oins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: id, Name: name, Status: Service_OFFLINE}})
 				}
 			}
 		}
 	}
-	s.lock.Lock()
 	delete(s.instances, name+"/"+id)
-	s.lock.Unlock()
 }
 
 var kve = &Event{Type: Event_KEEPALIVE}
 
 func (s *Wheel) onKeepAlive() {
-	grpclog.Println("NumGoroutine", runtime.NumGoroutine(), "NumCPU", runtime.NumCPU())
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	for _, ins := range s.instances {
-		go func(ins *serviceInstance) {
-			ins.notify(kve)
-		}(ins)
-	}
+	grpclog.Printf("NumGoroutine %d NumCPU %d\n", runtime.NumGoroutine(), runtime.NumCPU())
 }
 
 type serviceInstance struct {
 	srv            *Service
 	lastActiveTime int64
-	ch             BblWheel_RegisterServer
+	ch             BblWheel_EventsServer
 	fsm            *fsm.FSM
 	wheel          *Wheel
 }
 
-func (ins *serviceInstance) notify(ev *Event) {
-	if err := ins.ch.Send(kve); err != nil {
-		grpclog.Println(err)
-		if err := srvmgt.unregister(ins.srv.ID, ins.srv.Name); err != nil {
+func (ins *serviceInstance) serve() error {
+	for {
+		ev, err := ins.ch.Recv()
+		if err == io.EOF {
+			grpclog.Println("Wheel.Events", err)
+			return nil
+		}
+		if err != nil {
+			grpclog.Println("Wheel.Events", err)
+			return err
+		}
+
+		if ev.Type != Event_KEEPALIVE {
+			err = fmt.Errorf("Error Event.Type %s", Event_EventType_name[int32(ev.Type)])
 			grpclog.Println(err)
+			return err
+		}
+		if ev.Service == nil {
+			err = fmt.Errorf("Error Event.Service is nil")
+			grpclog.Println(err)
+			return err
+		}
+		ins.srv = ev.Service
+		ins.lastActiveTime = time.Now().Unix()
+		err = srvmgt.update(ev.Service)
+		if err != nil {
+			//grpclog.Println("srvmgt.update", err)
+			grpclog.Println("srvmgt.update", ev.Service, err)
+		}
+	}
+}
+
+func (ins *serviceInstance) notify(ev *Event) {
+	grpclog.Println(ins.srv.key(), "notify", ev)
+	if ins.ch == nil {
+		return
+	}
+	if err := ins.ch.Send(kve); err != nil {
+		grpclog.Println("serviceInstance.notify", err)
+		if err := srvmgt.unregister(ins.srv.ID, ins.srv.Name); err != nil {
+			grpclog.Println("srvmgt.unregister", err)
 		}
 	}
 }
@@ -293,7 +355,7 @@ func joinKey(prefix string, suffix ...string) string {
 		if "/" == s {
 			key = key + s
 		} else {
-			key = "/" + s
+			key = key + "/" + s
 		}
 	}
 	return key
