@@ -2,7 +2,8 @@ package main
 
 import (
 	"flag"
-	"yunji/bblwheel"
+
+	"github.com/gqf2008/bblwheel"
 )
 
 func main() {
