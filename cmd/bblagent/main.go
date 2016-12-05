@@ -45,7 +45,7 @@ func main() {
 					grpclog.Println("agent", event.Name, err)
 					break
 				}
-				if fi.IsDir() {
+				if fi.IsDir() || !strings.HasSuffix(event.Name, ".json") {
 					break
 				}
 				if a, has := agents[event.Name]; has {
@@ -63,6 +63,9 @@ func main() {
 					grpclog.Println("add watch", event.Name, watcher.Add(event.Name))
 					break
 				}
+				if !strings.HasSuffix(event.Name, ".json") {
+					break
+				}
 				if _, has := agents[event.Name]; has {
 					grpclog.Println("agent", event.Name, "exist")
 				} else if strings.HasSuffix(event.Name, ".json") {
@@ -75,8 +78,12 @@ func main() {
 					go work(a)
 				}
 			} else if event.Op&fsnotify.Remove == fsnotify.Remove || event.Op&fsnotify.Rename == fsnotify.Rename {
+				if !strings.HasSuffix(event.Name, ".json") {
+					break
+				}
 				if a, has := agents[event.Name]; has {
 					a.done <- struct{}{}
+					delete(agents, event.Name)
 				}
 			}
 		case err := <-watcher.Errors:
@@ -150,11 +157,12 @@ func (a *agent) onExec(cmd string) {
 
 func work(a *agent) {
 	grpclog.Println("agent", a.service.Name+"/"+a.service.ID, "running")
-	defer grpclog.Println("agent", a.service.Name+"/"+a.service.ID, "exist")
+	defer grpclog.Println("agent", a.service.Name+"/"+a.service.ID, "exit")
 	a.service.OnDiscovery = a.onDiscovery
 	a.service.OnConfigUpdated = a.OnConfigUpdated
 	a.service.OnControl = a.onControl
 	a.service.OnExec = a.onExec
+	a.service.Endpoints = strings.Split(endpoints, ",")
 	for {
 		res := a.service.Register()
 		grpclog.Println("Register", a.service, res)
@@ -166,6 +174,7 @@ func work(a *agent) {
 	for {
 		select {
 		case <-a.done:
+			a.service.Unregister()
 			return
 		case cmd := <-a.ch:
 			grpclog.Println(cmd)
