@@ -246,9 +246,7 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentConfigs {
 			if n == key {
-				if oins, has := s.instances[ins.srv.key()]; has {
-					go oins.notify(&Event{Type: Event_CONFIGUPDATE, Item: item})
-				}
+				go ins.notify(&Event{Type: Event_CONFIGUPDATE, Item: item})
 			}
 		}
 	}
@@ -261,10 +259,8 @@ func (s *Wheel) onUpdate(srv *Service) {
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
-			if n == srv.Name {
-				if oins, has := s.instances[ins.srv.key()]; has && aumgt.has(srv.Name, n) {
-					go oins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
-				}
+			if n == srv.Name && aumgt.has(srv.Name, ins.srv.Name) {
+				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 			}
 		}
 	}
@@ -276,9 +272,7 @@ func (s *Wheel) onDelete(name, id string) {
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == name {
-				if oins, has := s.instances[ins.srv.key()]; has {
-					go oins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: id, Name: name, Status: Service_OFFLINE}})
-				}
+				go ins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: id, Name: name, Status: Service_OFFLINE}})
 			}
 		}
 	}
