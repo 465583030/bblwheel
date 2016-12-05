@@ -253,6 +253,7 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 }
 
 func (s *Wheel) onUpdate(srv *Service) {
+	//TODO 更新s.instances保存各个节点数据一致
 	grpclog.Println("onUpdate")
 	s.lock.RLock()
 	defer s.lock.RUnlock()
