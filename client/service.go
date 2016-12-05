@@ -7,6 +7,8 @@ import (
 
 	"github.com/gqf2008/bblwheel"
 
+	"io"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -82,10 +84,14 @@ func (s *ServiceInstance) LookupService(deps []string) []*bblwheel.Service {
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	res, err := cli.LookupService(context.Background(), &bblwheel.LookupServiceReq{DependentServices: deps})
-	if err != nil {
-		grpclog.Println(err)
+	if err == io.EOF {
+		grpclog.Println("ServiceInstance.LookupService", err)
 		s.reconnect()
 		return s.LookupService(deps)
+	}
+	if err != nil {
+		grpclog.Println(err)
+		return []*bblwheel.Service{}
 	}
 	return res.Services
 }
@@ -97,10 +103,14 @@ func (s *ServiceInstance) LookupConfig(deps []string) map[string]*bblwheel.Confi
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	res, err := cli.LookupConfig(context.Background(), &bblwheel.LookupConfigReq{DependentConfigs: deps})
-	if err != nil {
-		grpclog.Println(err)
+	if err == io.EOF {
+		grpclog.Println("ServiceInstance.LookupConfig", err)
 		s.reconnect()
 		return s.LookupConfig(deps)
+	}
+	if err != nil {
+		grpclog.Println(err)
+		return map[string]*bblwheel.Config{}
 	}
 	return res.Configs
 }
@@ -112,10 +122,14 @@ func (s *ServiceInstance) UpdateConfig(conf *bblwheel.Config) {
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	_, err := cli.UpdateConfig(context.Background(), &bblwheel.UpdateConfigReq{ServiceID: s.ID, ServiceName: s.Name, Config: conf})
-	if err != nil {
-		grpclog.Println(err)
+	if err == io.EOF {
+		grpclog.Println("ServiceInstance.UpdateConfig", err)
 		s.reconnect()
 		s.UpdateConfig(conf)
+		return
+	}
+	if err != nil {
+		grpclog.Println(err)
 	}
 }
 
@@ -126,10 +140,16 @@ func (s *ServiceInstance) Register() *bblwheel.RegisterResult {
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	res, err := cli.Register(context.Background(), s.Service)
-	if err != nil {
+	if err == io.EOF {
 		grpclog.Println("ServiceInstance.Register", err)
 		s.reconnect()
 		return s.Register()
+	}
+	if err != nil {
+		grpclog.Println("ServiceInstance.Register", err)
+		res = &bblwheel.RegisterResult{}
+		res.Desc = err.Error()
+		return res
 	}
 	s.close = make(chan struct{}, 1)
 	s.once = &bblwheel.Once{}
@@ -171,6 +191,7 @@ func (s *ServiceInstance) keepAlive() {
 		if err != nil {
 			grpclog.Println(err)
 			s.reconnect()
+			s.Register()
 			continue
 		}
 

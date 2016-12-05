@@ -91,10 +91,17 @@ func (s *Wheel) LookupService(_ context.Context, req *LookupServiceReq) (*Lookup
 
 //Register ....
 func (s *Wheel) Register(_ context.Context, srv *Service) (*RegisterResult, error) {
+	ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
+	s.lock.Lock()
+	s.instances[srv.key()] = &ins
+	s.lock.Unlock()
 	res := &RegisterResult{Desc: "SUCCESS"}
 	err := srvmgt.register(srv)
 	if err != nil {
 		res.Desc = err.Error()
+		s.lock.Lock()
+		delete(s.instances, srv.key())
+		s.lock.Unlock()
 		grpclog.Println("Register.register", err)
 		return res, nil
 	}
@@ -112,22 +119,17 @@ func (s *Wheel) Register(_ context.Context, srv *Service) (*RegisterResult, erro
 	if len(srv.DependentConfigs) > 0 {
 		res.Configs = confmgt.get(srv.DependentConfigs)
 	}
-
-	ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
-	s.lock.Lock()
-	s.instances[srv.key()] = &ins
-	s.lock.Unlock()
 	return res, nil
 }
 
 //Unregister ....
 func (s *Wheel) Unregister(ctx context.Context, srv *Service) (*Void, error) {
-	if err := srvmgt.unregister(srv.ID, srv.Name); err != nil {
-		grpclog.Println(err)
-	}
 	s.lock.Lock()
 	delete(s.instances, srv.key())
 	s.lock.Unlock()
+	if err := srvmgt.unregister(srv.ID, srv.Name); err != nil {
+		grpclog.Println(err)
+	}
 	return &Void{}, nil
 }
 func (srv *Service) key() string {
@@ -238,7 +240,7 @@ func (s *Wheel) onCancel(from string, to string) {
 }
 
 func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
-	grpclog.Println("onConfigChanged")
+	grpclog.Println("onConfigChanged", key, item)
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
@@ -254,13 +256,13 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 
 func (s *Wheel) onUpdate(srv *Service) {
 	//TODO 更新s.instances保存各个节点数据一致
-	grpclog.Println("onUpdate")
+	grpclog.Println("onUpdate", srv)
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
 		for _, n := range ins.srv.DependentServices {
 			if n == srv.Name {
-				if oins, has := s.instances[ins.srv.key()]; has && oins.srv.Status != srv.Status && aumgt.has(srv.Name, n) {
+				if oins, has := s.instances[ins.srv.key()]; has && aumgt.has(srv.Name, n) {
 					go oins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 				}
 			}
@@ -268,7 +270,7 @@ func (s *Wheel) onUpdate(srv *Service) {
 	}
 }
 func (s *Wheel) onDelete(name, id string) {
-	grpclog.Println("onDelete")
+	grpclog.Println("onDelete", name+"/"+id)
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for _, ins := range s.instances {
