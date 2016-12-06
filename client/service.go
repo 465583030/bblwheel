@@ -9,10 +9,15 @@ import (
 
 	"io"
 
+	grpclog "log"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 )
+
+func init() {
+	grpclog.SetFlags(grpclog.Lshortfile | grpclog.LstdFlags)
+}
 
 //OnDiscoveryFunc ....
 type OnDiscoveryFunc func(*bblwheel.Service)
@@ -140,7 +145,7 @@ func (s *ServiceInstance) Register() *bblwheel.RegisterResult {
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	res, err := cli.Register(context.Background(), s.Service)
-	if err == io.EOF {
+	if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
 		grpclog.Println("ServiceInstance.Register", err)
 		s.reconnect()
 		return s.Register()
@@ -188,19 +193,30 @@ func (s *ServiceInstance) keepAlive() {
 		}
 		cli := bblwheel.NewBblWheelClient(s.conn)
 		ch, err := cli.Events(context.Background())
-		if err != nil {
-			grpclog.Println(err)
+		if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
+			grpclog.Println("ServiceInstance.keepAlive", err)
 			s.reconnect()
-			s.Register()
+			continue
+			//s.Register()
+		}
+		if err != nil {
+			grpclog.Println("ServiceInstance.keepAlive", err)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 
 		s.lock.RLock()
 		kv.Service = s.Service
 		s.lock.RUnlock()
-		if err := ch.Send(&kv); err != nil {
+		err = ch.Send(&kv)
+		if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
 			grpclog.Println(err)
 			s.reconnect()
+			continue
+		}
+		if err != nil {
+			grpclog.Println(err)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 		ticker := time.NewTicker((bblwheel.DefaultTTL - 10) * time.Second)

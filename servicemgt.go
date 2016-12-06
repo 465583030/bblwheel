@@ -159,6 +159,24 @@ func (s *servicemgt) findServiceList(names []string) []*Service {
 	}
 	return list
 }
+func (s *servicemgt) findAllService() []*Service {
+	var list = []*Service{}
+	resp, err := GetWithPrfix(registerKey("/"))
+	if err != nil {
+		grpclog.Println(err)
+		return list
+	}
+	for _, kv := range resp.Kvs {
+		o := Service{}
+		err = json.Unmarshal(kv.Value, &o)
+		if err != nil {
+			grpclog.Println(err)
+			continue
+		}
+		list = append(list, &o)
+	}
+	return list
+}
 func (s *servicemgt) keepalive() {
 	for {
 		grpclog.Println("keepalive")

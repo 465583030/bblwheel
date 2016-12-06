@@ -47,14 +47,18 @@ func StartWheel() error {
 		startAuthWatcher()
 		startConfigWatcher()
 		startServiceWatcher()
-		srv, err := newWheel()
+		wheel, err := newWheel()
 		if err != nil {
 			return err
 		}
-		confmgt.observer = srv.onConfigChanged
-		srvmgt.observer = srv
-		aumgt.observer = srv
-		return srv.serve()
+		confmgt.observer = wheel.onConfigChanged
+		srvmgt.observer = wheel
+		aumgt.observer = wheel
+		list := srvmgt.findAllService()
+		for _, srv := range list {
+			wheel.instances[srv.key()] = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: wheel}
+		}
+		return wheel.serve()
 	})
 
 }
@@ -255,6 +259,7 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 func (s *Wheel) onUpdate(srv *Service) {
 	//TODO 更新s.instances保存各个节点数据一致
 	grpclog.Println("onUpdate", srv)
+	s.update(srv)
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
@@ -264,6 +269,18 @@ func (s *Wheel) onUpdate(srv *Service) {
 			}
 		}
 	}
+}
+
+func (s *Wheel) update(srv *Service) {
+	s.lock.Lock()
+	if ins, has := s.instances[srv.key()]; has {
+		ins.srv = srv
+		ins.lastActiveTime = time.Now().Unix()
+	} else {
+		ins = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
+		s.instances[srv.key()] = ins
+	}
+	s.lock.Unlock()
 }
 func (s *Wheel) onDelete(name, id string) {
 	grpclog.Println("onDelete", name+"/"+id)
