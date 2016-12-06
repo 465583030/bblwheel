@@ -190,12 +190,6 @@ func (s *ServiceInstance) keepAlive() {
 		}
 		cli := bblwheel.NewBblWheelClient(s.conn)
 		ch, err := cli.Events(context.Background())
-		// if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
-		// 	grpclog.Println("ServiceInstance.keepAlive", err)
-		// 	s.reconnect()
-		// 	continue
-		// 	//s.Register()
-		// }
 		if err != nil {
 			grpclog.Println("ServiceInstance.keepAlive", err)
 			s.reconnect()
