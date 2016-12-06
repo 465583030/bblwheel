@@ -361,7 +361,7 @@ func (s *Wheel) doUpdate(ev *event) {
 	}
 }
 func (s *Wheel) onUpdate(srv *Service) {
-	grpclog.Println("onUpdate", srv)
+	grpclog.Println("onUpdate", srv.key(), Service_Status_name[int32(srv.Status)])
 	s.events <- newEvent("onUpdate", srv)
 
 }
@@ -432,38 +432,6 @@ type serviceInstance struct {
 	fsm            *fsm.FSM
 	wheel          *Wheel
 }
-
-// func (ins *serviceInstance) serve() error {
-// 	for {
-// 		ev, err := ins.ch.Recv()
-// 		if err == io.EOF {
-// 			grpclog.Println("Wheel.Events", err)
-// 			return nil
-// 		}
-// 		if err != nil {
-// 			grpclog.Println("Wheel.Events", err)
-// 			return err
-// 		}
-
-// 		if ev.Type != Event_KEEPALIVE {
-// 			err = fmt.Errorf("Error Event.Type %s", Event_EventType_name[int32(ev.Type)])
-// 			grpclog.Println(err)
-// 			return err
-// 		}
-// 		if ev.Service == nil {
-// 			err = fmt.Errorf("Error Event.Service is nil")
-// 			grpclog.Println(err)
-// 			return err
-// 		}
-// 		ins.srv = ev.Service
-// 		ins.lastActiveTime = time.Now().Unix()
-// 		err = srvmgt.update(ev.Service)
-// 		if err != nil {
-// 			//grpclog.Println("srvmgt.update", err)
-// 			grpclog.Println("srvmgt.update", ev.Service, err)
-// 		}
-// 	}
-// }
 
 func (ins *serviceInstance) notify(ev *Event) {
 	if ins.ch == nil {
