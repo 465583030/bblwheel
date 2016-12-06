@@ -10,9 +10,10 @@ import (
 
 	"time"
 
+	grpclog "log"
+
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-	"google.golang.org/grpc/grpclog"
 )
 
 //DefaultTTL ....
@@ -86,27 +87,6 @@ func (s *servicemgt) update(srv *Service) error {
 	if srv.ID == "" {
 		return fmt.Errorf("Service.ID is required")
 	}
-	// resp, err := GetKv(registerKey(srv.Name, srv.ID))
-	// if err != nil {
-	// 	return err
-	// }
-	// if resp.Count == 0 {
-	// 	return fmt.Errorf("Service %s/%s not found", srv.Name, srv.ID)
-	// }
-	// var o = Service{}
-	// err = json.Unmarshal(resp.Kvs[0].Value, &o)
-	// if err != nil {
-	// 	return err
-	// }
-	// if o.ID != srv.ID {
-	// 	return fmt.Errorf("error Service.ID %s <> %s", o.ID, srv.ID)
-	// }
-	// if o.Name != srv.Name {
-	// 	return fmt.Errorf("error Service.Name %s <> %s", o.Name, srv.Name)
-	// }
-	// if o.Status != Service_ONLINE {
-	// 	srv.Status = o.Status
-	// }
 	b, err := json.MarshalIndent(srv, "", "  ")
 	if err != nil {
 		return err
@@ -166,6 +146,10 @@ func (s *servicemgt) findAllService() []*Service {
 		grpclog.Println(err)
 		return list
 	}
+	if resp.Count != int64(len(resp.Kvs)) {
+		panic(fmt.Sprintf("resp.Count %d resp.Kvs %d resp.More %v\n", resp.Count, len(resp.Kvs), resp.More))
+	}
+
 	for _, kv := range resp.Kvs {
 		o := Service{}
 		err = json.Unmarshal(kv.Value, &o)

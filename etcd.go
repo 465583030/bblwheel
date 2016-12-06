@@ -4,11 +4,12 @@ import (
 	"errors"
 	"time"
 
+	grpclog "log"
+
 	v3 "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc/grpclog"
 )
 
 const (
@@ -74,7 +75,7 @@ func GetKv(key string) (*v3.GetResponse, error) {
 //GetWithPrfix ....
 func GetWithPrfix(keyPrefix string) (*v3.GetResponse, error) {
 	grpclog.Println("GetWithPrfix", keyPrefix)
-	return cli.Get(context.TODO(), keyPrefix, v3.WithFirstKey()...)
+	return cli.Get(context.TODO(), keyPrefix, v3.WithPrefix())
 }
 
 //PutKv ....

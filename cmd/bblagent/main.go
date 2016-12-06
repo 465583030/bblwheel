@@ -26,6 +26,7 @@ var watcher *fsnotify.Watcher
 func init() {
 	flag.StringVar(&endpoints, "endpoints", endpoints, "bblwheel server address")
 	flag.StringVar(&workdir, "agentdir", workdir, "service file directory")
+	grpclog.SetFlags(grpclog.Lshortfile | grpclog.LstdFlags)
 }
 func main() {
 	flag.Parse()

@@ -12,9 +12,10 @@ import (
 
 	"golang.org/x/net/context"
 
+	grpclog "log"
+
 	"github.com/looplab/fsm"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 )
 
 const (
@@ -38,6 +39,7 @@ var (
 func init() {
 	flag.StringVar(&ListenAddr, "bblwheel.address", ListenAddr, "rpc listen address")
 	flag.StringVar(&WorkDir, "workdir", WorkDir, "work directory")
+	grpclog.SetFlags(grpclog.Lshortfile | grpclog.LstdFlags)
 }
 
 //StartWheel ....
@@ -58,6 +60,7 @@ func StartWheel() error {
 		for _, srv := range list {
 			wheel.instances[srv.key()] = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: wheel}
 		}
+		grpclog.Println("StartWheel.Instances", wheel.instances)
 		return wheel.serve()
 	})
 
@@ -174,6 +177,7 @@ func (s *Wheel) Events(ch BblWheel_EventsServer) error {
 	}
 	s.lock.Lock()
 	ins, has := s.instances[srv.key()]
+	grpclog.Println("Instances", s.instances)
 	if !has {
 		s.lock.Unlock()
 		err = fmt.Errorf("Error Event.Service %s not registered", srv.key())
@@ -214,13 +218,15 @@ func (s *Wheel) onGrant(from string, to string) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	for _, ins := range s.instances {
-		for _, n := range ins.srv.DependentServices {
-			if n == from && ins.srv.Name == to {
-				go func() {
+		for _, dep := range ins.srv.DependentServices {
+			if dep == from && ins.srv.Name == to {
+				grpclog.Println("onGrant", dep, ins.srv.Name)
+				go func(ins *serviceInstance) {
 					for _, srv := range srvs {
+						grpclog.Println("onGrant", ins.srv.Name, ins.srv.ID)
 						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 					}
-				}()
+				}(ins)
 			}
 		}
 	}
@@ -231,13 +237,15 @@ func (s *Wheel) onCancel(from string, to string) {
 	defer s.lock.RUnlock()
 	srvs := srvmgt.findServiceList([]string{from})
 	for _, ins := range s.instances {
-		for _, n := range ins.srv.DependentServices {
-			if n == from && ins.srv.Name == to {
-				go func() {
+		for _, dep := range ins.srv.DependentServices {
+			if dep == from && ins.srv.Name == to {
+				grpclog.Println("onGrant", dep, ins.srv.Name)
+				go func(ins *serviceInstance) {
 					for _, srv := range srvs {
+						grpclog.Println("onGrant", ins.srv.Name, ins.srv.ID)
 						ins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: srv.ID, Name: srv.Name, Status: Service_UNAUTHORIZE}})
 					}
-				}()
+				}(ins)
 			}
 		}
 	}
@@ -255,7 +263,17 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 		}
 	}
 }
-
+func (s *Wheel) update(srv *Service) {
+	s.lock.Lock()
+	if ins, has := s.instances[srv.key()]; has {
+		ins.srv = srv
+		ins.lastActiveTime = time.Now().Unix()
+	} else {
+		ins = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
+		s.instances[srv.key()] = ins
+	}
+	s.lock.Unlock()
+}
 func (s *Wheel) onUpdate(srv *Service) {
 	//TODO 更新s.instances保存各个节点数据一致
 	grpclog.Println("onUpdate", srv)
@@ -271,17 +289,6 @@ func (s *Wheel) onUpdate(srv *Service) {
 	}
 }
 
-func (s *Wheel) update(srv *Service) {
-	s.lock.Lock()
-	if ins, has := s.instances[srv.key()]; has {
-		ins.srv = srv
-		ins.lastActiveTime = time.Now().Unix()
-	} else {
-		ins = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
-		s.instances[srv.key()] = ins
-	}
-	s.lock.Unlock()
-}
 func (s *Wheel) onDelete(name, id string) {
 	grpclog.Println("onDelete", name+"/"+id)
 	s.lock.Lock()

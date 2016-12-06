@@ -5,9 +5,10 @@ import (
 
 	"sync"
 
+	grpclog "log"
+
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-	"google.golang.org/grpc/grpclog"
 )
 
 var confmgt *configmgt

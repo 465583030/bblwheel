@@ -5,9 +5,10 @@ import (
 	"strings"
 	"sync"
 
+	grpclog "log"
+
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-	"google.golang.org/grpc/grpclog"
 )
 
 var aumgt *authmgt
@@ -56,7 +57,7 @@ func (t *authmgt) add(from, to string) {
 func (t *authmgt) watch() {
 	t.once.Do(func() {
 		grpclog.Println("load grant table")
-		resp, err := GetWithPrfix(ServiceGrantPrefix)
+		resp, err := GetWithPrfix(ServiceGrantPrefix + "/")
 		if err != nil {
 			grpclog.Fatalln(err)
 			return
@@ -82,6 +83,7 @@ func (t *authmgt) watch() {
 			//resp.Header.Revision,
 			[]mvccpb.Event_EventType{mvccpb.PUT, mvccpb.DELETE},
 			func(event *clientv3.Event) {
+				grpclog.Println("grant event", event)
 				name := strings.SplitN(strings.TrimPrefix(string(event.Kv.Key), ServiceGrantPrefix+"/"), "/", 2)
 				if len(name) != 2 || name[0] == "" || name[1] == "" {
 					grpclog.Println("invalid grant info")

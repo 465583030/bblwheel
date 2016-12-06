@@ -1,15 +1,12 @@
 package client
 
 import (
+	"io"
+	grpclog "log"
 	"sync"
-
 	"time"
 
 	"github.com/gqf2008/bblwheel"
-
-	"io"
-
-	grpclog "log"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -193,15 +190,15 @@ func (s *ServiceInstance) keepAlive() {
 		}
 		cli := bblwheel.NewBblWheelClient(s.conn)
 		ch, err := cli.Events(context.Background())
-		if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
-			grpclog.Println("ServiceInstance.keepAlive", err)
-			s.reconnect()
-			continue
-			//s.Register()
-		}
+		// if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
+		// 	grpclog.Println("ServiceInstance.keepAlive", err)
+		// 	s.reconnect()
+		// 	continue
+		// 	//s.Register()
+		// }
 		if err != nil {
 			grpclog.Println("ServiceInstance.keepAlive", err)
-			time.Sleep(3 * time.Second)
+			s.reconnect()
 			continue
 		}
 

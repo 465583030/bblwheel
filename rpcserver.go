@@ -9,8 +9,9 @@ import (
 
 	"log"
 
+	grpclog "log"
+
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 )
 
 var (
