@@ -50,14 +50,12 @@ func NewServiceInstance() *ServiceInstance {
 
 //Disconnect ....
 func (s *ServiceInstance) disconnect() {
-	s.once.Do(func() {
-		if s.conn != nil {
-			s.conn.Close()
-		}
-		if s.close != nil {
-			s.close <- struct{}{}
-		}
-	})
+	if s.conn != nil {
+		s.conn.Close()
+	}
+	if s.close != nil {
+		close(s.close)
+	}
 }
 
 func (s *ServiceInstance) reconnect() {
@@ -135,58 +133,51 @@ func (s *ServiceInstance) UpdateConfig(conf *bblwheel.Config) {
 	}
 }
 
-//Register ....
-func (s *ServiceInstance) Register() *bblwheel.RegisterResult {
-	if s.conn == nil {
-		s.reconnect()
-	}
-	cli := bblwheel.NewBblWheelClient(s.conn)
-	res, err := cli.Register(context.Background(), s.Service)
-	if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
-		grpclog.Println("ServiceInstance.Register", err)
-		s.reconnect()
-		return s.Register()
-	}
-	if err != nil {
-		grpclog.Println("ServiceInstance.Register", err)
-		res = &bblwheel.RegisterResult{}
-		res.Desc = err.Error()
-		return res
-	}
-	s.close = make(chan struct{}, 1)
-	s.once = &bblwheel.Once{}
-	go s.keepAlive()
-	return res
-}
+// //Register ....
+// func (s *ServiceInstance) Register() *bblwheel.RegisterResult {
+// 	if s.conn == nil {
+// 		s.reconnect()
+// 	}
+// 	cli := bblwheel.NewBblWheelClient(s.conn)
+// 	res, err := cli.Register(context.Background(), s.Service)
+// 	if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
+// 		grpclog.Println("ServiceInstance.Register", err)
+// 		s.reconnect()
+// 		return s.Register()
+// 	}
+// 	if err != nil {
+// 		grpclog.Println("ServiceInstance.Register", err)
+// 		res = &bblwheel.RegisterResult{}
+// 		res.Desc = err.Error()
+// 		return res
+// 	}
+// 	s.close = make(chan struct{}, 1)
+// 	s.once = &bblwheel.Once{}
+// 	go s.keepAlive()
+// 	return res
+// }
 
 //Online ....
 func (s *ServiceInstance) Online() {
 	s.Status = bblwheel.Service_ONLINE
 }
 
-//Unregister ....
-func (s *ServiceInstance) Unregister() {
-	if s.once == nil {
-		return
-	}
-	s.once.Do(func() {
-		cli := bblwheel.NewBblWheelClient(s.conn)
-		_, err := cli.Unregister(context.Background(), s.Service)
-		if err != nil {
-			grpclog.Println(err)
-		}
-		s.disconnect()
-	})
+//Close ....
+func (s *ServiceInstance) Close() {
+	s.disconnect()
 }
 
-func (s *ServiceInstance) keepAlive() {
+//Register ....
+func (s *ServiceInstance) Register() {
+	if s.conn == nil {
+		s.reconnect()
+	}
 	kv := bblwheel.Event{Type: bblwheel.Event_KEEPALIVE}
 	for {
 		select {
 		case <-s.close:
 			return
 		default:
-			break
 		}
 		cli := bblwheel.NewBblWheelClient(s.conn)
 		ch, err := cli.Events(context.Background())
@@ -200,14 +191,10 @@ func (s *ServiceInstance) keepAlive() {
 		kv.Service = s.Service
 		s.lock.RUnlock()
 		err = ch.Send(&kv)
-		if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
-			grpclog.Println(err)
-			s.reconnect()
-			continue
-		}
 		if err != nil {
 			grpclog.Println(err)
 			time.Sleep(3 * time.Second)
+			s.reconnect()
 			continue
 		}
 		ticker := time.NewTicker((bblwheel.DefaultTTL - 10) * time.Second)

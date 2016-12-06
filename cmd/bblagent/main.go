@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	grpclog "log"
 
@@ -164,18 +163,11 @@ func work(a *agent) {
 	a.service.OnControl = a.onControl
 	a.service.OnExec = a.onExec
 	a.service.Endpoints = strings.Split(endpoints, ",")
-	for {
-		res := a.service.Register()
-		grpclog.Println("Register", a.service, res)
-		if "SUCCESS" == res.Desc {
-			break
-		}
-		time.Sleep(3 * time.Second)
-	}
+	a.service.Register()
 	for {
 		select {
 		case <-a.done:
-			a.service.Unregister()
+			//a.service.Unregister()
 			return
 		case cmd := <-a.ch:
 			grpclog.Println(cmd)

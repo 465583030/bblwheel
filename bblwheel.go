@@ -68,13 +68,13 @@ func StartWheel() error {
 func newWheel() (*Wheel, error) {
 	wheel := &Wheel{
 		instances: map[string]*serviceInstance{},
-		events:    make(chan *event, 1000),
+		events:    make(chan *event, 1024),
 		fn:        map[string]func(*event){},
 	}
 	wheel.fn = map[string]func(*event){
-		"onRegister":      wheel.doRegister,
-		"onUnregister":    wheel.doUnregister,
-		"onKeepAlive":     wheel.doKeepAlive,
+		//"onRegister":      wheel.doRegister,
+		"onExit":          wheel.doExit,
+		"onEvent":         wheel.doEvent,
 		"onGrant":         wheel.doGrant,
 		"onCancel":        wheel.doCancel,
 		"onUpdate":        wheel.doUpdate,
@@ -111,62 +111,6 @@ func (s *Wheel) LookupService(_ context.Context, req *LookupServiceReq) (*Lookup
 	return resp, nil
 }
 
-//Register ....
-func (s *Wheel) Register(_ context.Context, srv *Service) (*RegisterResult, error) {
-	ev := newEvent("onRegister", srv)
-	s.events <- ev
-	select {
-	case err := <-ev.ctx.err:
-		return &RegisterResult{Desc: err.Error()}, nil
-	case res := <-ev.ctx.resp:
-		return res.(*RegisterResult), nil
-	}
-}
-func (s *Wheel) doRegister(ev *event) {
-	srv := ev.ctx.obj.(*Service)
-	ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
-	s.instances[srv.key()] = &ins
-	res := &RegisterResult{Desc: "SUCCESS"}
-	err := srvmgt.register(srv)
-	if err != nil {
-		res.Desc = err.Error()
-		delete(s.instances, srv.key())
-		grpclog.Println("Register.register", err)
-		ev.ctx.resp <- res
-		return
-	}
-	if len(srv.DependentServices) > 0 {
-		var dep = []string{}
-		for _, name := range srv.DependentServices {
-			grpclog.Println("DependentServices", name, srv.Name)
-			if aumgt.has(name, srv.Name) {
-				dep = append(dep, name)
-			}
-		}
-		grpclog.Println("findServiceList", dep)
-		res.Service = srvmgt.findServiceList(dep)
-	}
-	if len(srv.DependentConfigs) > 0 {
-		res.Configs = confmgt.get(srv.DependentConfigs)
-	}
-	ev.ctx.resp <- res
-}
-
-//Unregister ....
-func (s *Wheel) Unregister(ctx context.Context, srv *Service) (*Void, error) {
-	ev := newEvent("onUnregister", srv)
-	s.events <- ev
-	return &Void{}, nil
-}
-
-func (s *Wheel) doUnregister(ev *event) {
-	srv := ev.ctx.obj.(*Service)
-	delete(s.instances, srv.key())
-	if err := srvmgt.unregister(srv.ID, srv.Name); err != nil {
-		grpclog.Println(err)
-	}
-}
-
 func (srv *Service) key() string {
 	return fmt.Sprintf("%s/%s", srv.Name, srv.ID)
 }
@@ -182,7 +126,16 @@ func (s *Wheel) UpdateConfig(_ context.Context, req *UpdateConfigReq) (*Void, er
 //Events ....
 func (s *Wheel) Events(ch BblWheel_EventsServer) error {
 	grpclog.Println("Wheel.Events channel", ch)
-	defer grpclog.Println("Events channel", ch, "exist")
+	var srv *Service
+	defer func() {
+		if srv != nil {
+			s.events <- newEvent("onExit", &struct {
+				ch  BblWheel_EventsServer
+				srv *Service
+			}{ch, srv})
+		}
+		grpclog.Println("Events channel", ch, "exist")
+	}()
 	for {
 		ev, err := ch.Recv()
 		if err == io.EOF {
@@ -198,51 +151,61 @@ func (s *Wheel) Events(ch BblWheel_EventsServer) error {
 			grpclog.Println(err)
 			return err
 		}
-		srv := ev.Service
+		srv = ev.Service
 		if srv == nil {
 			err = fmt.Errorf("Error Event.Service is nil")
 			grpclog.Println(err)
 			return err
 		}
-		e := newEvent("onKeepAlive", &struct {
+		e := newEvent("onEvent", &struct {
 			ch  BblWheel_EventsServer
 			srv *Service
 		}{ch, srv})
 		s.events <- e
-		select {
-		case err := <-e.ctx.err:
+		if err := <-e.ctx.err; err != nil {
+			grpclog.Println("onEvent.Error", err)
 			return err
-		default:
 		}
 	}
 }
-func (s *Wheel) doKeepAlive(ev *event) {
-	grpclog.Println("doKeepAlive", ev)
+func (s *Wheel) doExit(ev *event) {
+	grpclog.Println("doExit", ev)
 	obj := ev.ctx.obj.(*struct {
 		ch  BblWheel_EventsServer
 		srv *Service
 	})
 	ch := obj.ch
 	srv := obj.srv
-	if srv == nil {
-		err := fmt.Errorf("Error Event.Service is nil")
-		grpclog.Println(err)
-		ev.ctx.err <- err
-		return
+	if ins, has := s.instances[srv.key()]; has && ins.ch != nil && ins.ch == ch {
+		ins.ch = nil
 	}
+}
+func (s *Wheel) doEvent(ev *event) {
+	grpclog.Println("doEvent", ev)
+	obj := ev.ctx.obj.(*struct {
+		ch  BblWheel_EventsServer
+		srv *Service
+	})
+	ch := obj.ch
+	srv := obj.srv
 	ins, has := s.instances[srv.key()]
-	grpclog.Println("Instances", s.instances)
+	//grpclog.Println("Instances", s.instances)
 	if !has {
-		err := fmt.Errorf("Error Event.Service %s not registered", srv.key())
-		grpclog.Println(err)
-		ev.ctx.err <- err
+		ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s, ch: ch}
+		err := srvmgt.register(srv)
+		if err != nil {
+			ev.ctx.err <- err
+			return
+		}
+		s.instances[srv.key()] = &ins
+		ev.ctx.err <- nil
 		return
 	}
 	if ins.ch == nil {
 		ins.ch = ch
-	} else if ins.ch != ch {
+	}
+	if ins.ch != ch {
 		err := fmt.Errorf("Error Event.Service %s channel exist", srv.key())
-		grpclog.Println(err)
 		ev.ctx.err <- err
 		return
 	}
@@ -251,6 +214,7 @@ func (s *Wheel) doKeepAlive(ev *event) {
 	if err := srvmgt.update(srv); err != nil {
 		grpclog.Println("srvmgt.update", srv, err)
 	}
+	ev.ctx.err <- nil
 }
 
 func (s *Wheel) onGrant(from string, to string) {
@@ -456,13 +420,12 @@ type event struct {
 }
 
 func newCtx(o interface{}) *ctx {
-	return &ctx{o, make(chan interface{}), make(chan error)}
+	return &ctx{o, make(chan error, 1)}
 }
 
 type ctx struct {
-	obj  interface{}
-	resp chan interface{}
-	err  chan error
+	obj interface{}
+	err chan error
 }
 
 func registerKey(suffix ...string) string {

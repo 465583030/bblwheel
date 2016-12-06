@@ -7,11 +7,11 @@ option optimize_for = SPEED;
 package bblwheel;
 
 message Void {}
-message RegisterResult{
-    string Desc = 1;
-    repeated Service Service = 2;
-    map<string,Config> Configs = 3;
-}
+//message RegisterResult{
+//    string Desc = 1;
+//    repeated Service Service = 2;
+//    map<string,Config> Configs = 3;
+//}
 
 message Service {
     string ID = 1;
@@ -36,6 +36,7 @@ message Service {
     Status status = 12;
     Stats Stats  =13;
     string Error = 14;
+    string Token = 15;
 }
 
 message ConfigEntry {
@@ -104,7 +105,7 @@ service BblWheel {
   rpc LookupConfig(LookupConfigReq) returns (LookupConfigResp);
   rpc LookupService(LookupServiceReq) returns (LookupServiceResp);
   rpc UpdateConfig(UpdateConfigReq) returns (Void);
-  rpc Register(Service) returns (RegisterResult);
-  rpc Unregister(Service) returns (Void);
+  //rpc Register(Service) returns (RegisterResult);
+  //rpc Unregister(Service) returns (Void);
   rpc Events(stream Event) returns (stream Event);
 }
