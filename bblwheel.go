@@ -26,6 +26,10 @@ const (
 	ServiceStatPrefix = "/v1/bblwheel/service/stat"
 	//ServiceGrantPrefix ....
 	ServiceGrantPrefix = "/v1/bblwheel/service/grant"
+	//ServiceControlPrefix ....
+	ServiceControlPrefix = "/v1/bblwheel/service/control"
+	//ServiceExecPrefix ....
+	ServiceExecPrefix = "/v1/bblwheel/service/exec"
 )
 
 var (
