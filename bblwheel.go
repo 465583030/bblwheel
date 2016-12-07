@@ -61,7 +61,7 @@ func StartWheel() error {
 		aumgt.observer = wheel
 		list := srvmgt.findAllService()
 		for _, srv := range list {
-			wheel.instances[srv.key()] = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: wheel}
+			wheel.instances[srv.key()] = &serviceInstance{Service: srv, lastActiveTime: time.Now().Unix(), wheel: wheel}
 		}
 		grpclog.Println("StartWheel.Instances", wheel.instances)
 		return wheel.serve()
@@ -182,6 +182,7 @@ func (s *Wheel) doExit(ev *event) {
 	srv := obj.srv
 	if ins, has := s.instances[srv.key()]; has && ins.ch != nil && ins.ch == ch {
 		ins.ch = nil
+		srvmgt.unregister(ins.ID, ins.Name)
 	}
 }
 func (s *Wheel) doEvent(ev *event) {
@@ -195,7 +196,7 @@ func (s *Wheel) doEvent(ev *event) {
 	ins, has := s.instances[srv.key()]
 	//grpclog.Println("Instances", s.instances)
 	if !has {
-		ins := serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s, ch: ch}
+		ins := serviceInstance{Service: srv, lastActiveTime: time.Now().Unix(), wheel: s, ch: ch}
 		err := srvmgt.register(srv)
 		if err != nil {
 			ev.ctx.err <- err
@@ -213,7 +214,7 @@ func (s *Wheel) doEvent(ev *event) {
 		ev.ctx.err <- err
 		return
 	}
-	ins.srv = srv
+	ins.Service = srv
 	ins.lastActiveTime = time.Now().Unix()
 	if err := srvmgt.update(srv); err != nil {
 		grpclog.Println("srvmgt.update", srv, err)
@@ -240,12 +241,12 @@ func (s *Wheel) doGrant(ev *event) {
 
 	srvs := srvmgt.findServiceList([]string{from})
 	for _, ins := range s.instances {
-		for _, dep := range ins.srv.DependentServices {
-			if dep == from && ins.srv.Name == to {
-				grpclog.Println("onGrant", dep, ins.srv.Name)
+		for _, dep := range ins.DependentServices {
+			if dep == from && ins.Name == to {
+				grpclog.Println("onGrant", dep, ins.Name)
 				go func(ins *serviceInstance) {
 					for _, srv := range srvs {
-						grpclog.Println("onGrant", ins.srv.Name, ins.srv.ID)
+						grpclog.Println("onGrant", ins.Name, ins.ID)
 						ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 					}
 				}(ins)
@@ -272,12 +273,12 @@ func (s *Wheel) doCancel(ev *event) {
 
 	srvs := srvmgt.findServiceList([]string{from})
 	for _, ins := range s.instances {
-		for _, dep := range ins.srv.DependentServices {
-			if dep == from && ins.srv.Name == to {
-				grpclog.Println("onGrant", dep, ins.srv.Name)
+		for _, dep := range ins.DependentServices {
+			if dep == from && ins.Name == to {
+				grpclog.Println("onGrant", dep, ins.Name)
 				go func(ins *serviceInstance) {
 					for _, srv := range srvs {
-						grpclog.Println("onGrant", ins.srv.Name, ins.srv.ID)
+						grpclog.Println("onGrant", ins.Name, ins.ID)
 						ins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: srv.ID, Name: srv.Name, Status: Service_UNAUTHORIZE}})
 					}
 				}(ins)
@@ -303,7 +304,7 @@ func (s *Wheel) doConfigChanged(ev *event) {
 	item := obj.item
 	grpclog.Println("onConfigChanged", key, item)
 	for _, ins := range s.instances {
-		for _, n := range ins.srv.DependentConfigs {
+		for _, n := range ins.DependentConfigs {
 			if n == key {
 				go ins.notify(&Event{Type: Event_CONFIGUPDATE, Item: item})
 			}
@@ -314,15 +315,15 @@ func (s *Wheel) doUpdate(ev *event) {
 	grpclog.Println("doUpdate", ev)
 	srv := ev.ctx.obj.(*Service)
 	if ins, has := s.instances[srv.key()]; has {
-		ins.srv = srv
+		ins.Service = srv
 		ins.lastActiveTime = time.Now().Unix()
 	} else {
-		ins = &serviceInstance{srv: srv, lastActiveTime: time.Now().Unix(), wheel: s}
+		ins = &serviceInstance{Service: srv, lastActiveTime: time.Now().Unix(), wheel: s}
 		s.instances[srv.key()] = ins
 	}
 	for _, ins := range s.instances {
-		for _, n := range ins.srv.DependentServices {
-			if n == srv.Name && aumgt.has(srv.Name, ins.srv.Name) {
+		for _, n := range ins.DependentServices {
+			if n == srv.Name && aumgt.has(srv.Name, ins.Name) {
 				go ins.notify(&Event{Type: Event_DISCOVERY, Service: srv})
 			}
 		}
@@ -347,7 +348,7 @@ func (s *Wheel) doDelete(ev *event) {
 	name := obj.name
 	id := obj.id
 	for _, ins := range s.instances {
-		for _, n := range ins.srv.DependentServices {
+		for _, n := range ins.DependentServices {
 			if n == name {
 				go ins.notify(&Event{Type: Event_DISCOVERY, Service: &Service{ID: id, Name: name, Status: Service_OFFLINE}})
 			}
@@ -394,7 +395,7 @@ func (s *Wheel) dowork() {
 }
 
 type serviceInstance struct {
-	srv            *Service
+	*Service
 	lastActiveTime int64
 	ch             BblWheel_EventsServer
 	fsm            *fsm.FSM
@@ -405,10 +406,10 @@ func (ins *serviceInstance) notify(ev *Event) {
 	if ins.ch == nil {
 		return
 	}
-	grpclog.Println("notify", ins.srv.key(), ev)
+	grpclog.Println("notify", ins.key(), ev)
 	if err := ins.ch.Send(ev); err != nil {
 		grpclog.Println("serviceInstance.notify", err)
-		if err := srvmgt.unregister(ins.srv.ID, ins.srv.Name); err != nil {
+		if err := srvmgt.unregister(ins.ID, ins.Name); err != nil {
 			grpclog.Println("srvmgt.unregister", err)
 		}
 	}

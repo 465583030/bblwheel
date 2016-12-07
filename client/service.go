@@ -28,8 +28,8 @@ type OnControlFunc func(string)
 //OnExecFunc ....
 type OnExecFunc func(string)
 
-//ServiceInstance ....
-type ServiceInstance struct {
+//ServiceProvider ....
+type ServiceProvider struct {
 	*bblwheel.Service
 	lock            sync.RWMutex
 	LastActiveTime  int64
@@ -43,22 +43,19 @@ type ServiceInstance struct {
 	once            *bblwheel.Once
 }
 
-//NewServiceInstance ....
-func NewServiceInstance() *ServiceInstance {
-	return &ServiceInstance{LastActiveTime: time.Now().Unix()}
+//NewServiceProvider ....
+func NewServiceProvider() *ServiceProvider {
+	return &ServiceProvider{LastActiveTime: time.Now().Unix()}
 }
 
 //Disconnect ....
-func (s *ServiceInstance) disconnect() {
+func (s *ServiceProvider) disconnect() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
-	if s.close != nil {
-		close(s.close)
-	}
 }
 
-func (s *ServiceInstance) reconnect() {
+func (s *ServiceProvider) reconnect() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for {
@@ -78,7 +75,7 @@ func (s *ServiceInstance) reconnect() {
 }
 
 //LookupService ....
-func (s *ServiceInstance) LookupService(deps []string) []*bblwheel.Service {
+func (s *ServiceProvider) LookupService(deps []string) []*bblwheel.Service {
 	if s.conn == nil {
 		s.reconnect()
 	}
@@ -97,7 +94,7 @@ func (s *ServiceInstance) LookupService(deps []string) []*bblwheel.Service {
 }
 
 //LookupConfig ....
-func (s *ServiceInstance) LookupConfig(deps []string) map[string]*bblwheel.Config {
+func (s *ServiceProvider) LookupConfig(deps []string) map[string]*bblwheel.Config {
 	if s.conn == nil {
 		s.reconnect()
 	}
@@ -116,7 +113,7 @@ func (s *ServiceInstance) LookupConfig(deps []string) map[string]*bblwheel.Confi
 }
 
 //UpdateConfig ....
-func (s *ServiceInstance) UpdateConfig(conf *bblwheel.Config) {
+func (s *ServiceProvider) UpdateConfig(conf *bblwheel.Config) {
 	if s.conn == nil {
 		s.reconnect()
 	}
@@ -133,44 +130,36 @@ func (s *ServiceInstance) UpdateConfig(conf *bblwheel.Config) {
 	}
 }
 
-// //Register ....
-// func (s *ServiceInstance) Register() *bblwheel.RegisterResult {
-// 	if s.conn == nil {
-// 		s.reconnect()
-// 	}
-// 	cli := bblwheel.NewBblWheelClient(s.conn)
-// 	res, err := cli.Register(context.Background(), s.Service)
-// 	if err == io.EOF || err == grpc.ErrClientConnClosing || err == grpc.ErrClientConnTimeout {
-// 		grpclog.Println("ServiceInstance.Register", err)
-// 		s.reconnect()
-// 		return s.Register()
-// 	}
-// 	if err != nil {
-// 		grpclog.Println("ServiceInstance.Register", err)
-// 		res = &bblwheel.RegisterResult{}
-// 		res.Desc = err.Error()
-// 		return res
-// 	}
-// 	s.close = make(chan struct{}, 1)
-// 	s.once = &bblwheel.Once{}
-// 	go s.keepAlive()
-// 	return res
-// }
-
 //Online ....
-func (s *ServiceInstance) Online() {
+func (s *ServiceProvider) Online() {
+	s.lock.Lock()
 	s.Status = bblwheel.Service_ONLINE
+	s.lock.Unlock()
 }
 
-//Close ....
-func (s *ServiceInstance) Close() {
+//Update ....
+func (s *ServiceProvider) Update(srv *ServiceProvider) {
+	s.lock.Lock()
+	s.Service = srv.Service
+	s.lock.Unlock()
+}
+
+//Unregister ....
+func (s *ServiceProvider) Unregister() {
+	if s.close != nil {
+		close(s.close)
+	}
 	s.disconnect()
 }
 
 //Register ....
-func (s *ServiceInstance) Register() {
+func (s *ServiceProvider) Register() {
+	defer grpclog.Println("ServiceProvider.KeepAlive", s.Name+"/"+s.ID, "exit")
 	if s.conn == nil {
 		s.reconnect()
+	}
+	if s.close == nil {
+		s.close = make(chan struct{})
 	}
 	kv := bblwheel.Event{Type: bblwheel.Event_KEEPALIVE}
 	for {
@@ -182,11 +171,10 @@ func (s *ServiceInstance) Register() {
 		cli := bblwheel.NewBblWheelClient(s.conn)
 		ch, err := cli.Events(context.Background())
 		if err != nil {
-			grpclog.Println("ServiceInstance.keepAlive", err)
+			grpclog.Println("ServiceProvider.keepAlive", err)
 			s.reconnect()
 			continue
 		}
-
 		s.lock.RLock()
 		kv.Service = s.Service
 		s.lock.RUnlock()
@@ -198,12 +186,12 @@ func (s *ServiceInstance) Register() {
 			continue
 		}
 		ticker := time.NewTicker((bblwheel.DefaultTTL - 10) * time.Second)
-		go func(s *ServiceInstance, ch bblwheel.BblWheel_EventsClient) {
-			grpclog.Println("ServiceInstance", s.Name+"/"+s.ID, "ticker running")
-			defer grpclog.Println("ServiceInstance", s.Name+"/"+s.ID, "ticker stopped")
+		go func(s *ServiceProvider, ch bblwheel.BblWheel_EventsClient) {
+			grpclog.Println("ServiceProvider", s.Name+"/"+s.ID, "ticker running")
+			defer grpclog.Println("ServiceProvider", s.Name+"/"+s.ID, "ticker stopped")
 
 			for t := range ticker.C {
-				grpclog.Println("ServiceInstance", s.Name+"/"+s.ID, "ticker", t)
+				grpclog.Println("ServiceProvider", s.Name+"/"+s.ID, "ticker", t)
 				s.lock.RLock()
 				kv.Service = s.Service
 				s.lock.RUnlock()
@@ -240,5 +228,4 @@ func (s *ServiceInstance) Register() {
 			}
 		}
 	}
-
 }

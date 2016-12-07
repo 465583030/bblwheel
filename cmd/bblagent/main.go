@@ -77,7 +77,28 @@ func main() {
 					agents[event.Name] = a
 					go work(a)
 				}
-			} else if event.Op&fsnotify.Remove == fsnotify.Remove || event.Op&fsnotify.Rename == fsnotify.Rename {
+			} else if event.Op&fsnotify.Rename == fsnotify.Rename {
+				fi, err := os.Stat(event.Name)
+				if err != nil {
+					if a, has := agents[event.Name]; has {
+						grpclog.Println("done")
+						a.done <- struct{}{}
+						delete(agents, event.Name)
+						grpclog.Println("done it")
+					}
+					break
+				}
+				if fi.IsDir() {
+					grpclog.Println("add watch", event.Name, watcher.Add(event.Name))
+					break
+				}
+				if !strings.HasSuffix(event.Name, ".json") {
+					break
+				}
+				if a, has := agents[event.Name]; has {
+					a.ch <- "reload"
+				}
+			} else if event.Op&fsnotify.Remove == fsnotify.Remove {
 				if !strings.HasSuffix(event.Name, ".json") {
 					break
 				}
@@ -113,24 +134,33 @@ func listfunc(path string, f os.FileInfo, err error) error {
 }
 
 func newAgent(path string) (*agent, error) {
+	ins, err := loadServiceFromFile(path)
+	if err != nil {
+		grpclog.Println(err)
+		return nil, err
+	}
+	a := agent{provider: ins, path: path, ch: make(chan string, 1), done: make(chan struct{})}
+	return &a, nil
+}
+
+func loadServiceFromFile(path string) (*client.ServiceProvider, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	ins := client.ServiceInstance{}
+	ins := client.ServiceProvider{}
 	err = json.Unmarshal(b, &ins)
 	if err != nil {
 		return nil, err
 	}
-	a := agent{service: &ins, path: path, ch: make(chan string, 1), done: make(chan struct{})}
-	return &a, nil
+	return &ins, nil
 }
 
 type agent struct {
-	service *client.ServiceInstance
-	path    string
-	ch      chan string
-	done    chan struct{}
+	provider *client.ServiceProvider
+	path     string
+	ch       chan string
+	done     chan struct{}
 }
 
 func (a *agent) onDiscovery(srv *bblwheel.Service) {
@@ -156,21 +186,31 @@ func (a *agent) onExec(cmd string) {
 }
 
 func work(a *agent) {
-	grpclog.Println("agent", a.service.Name+"/"+a.service.ID, "running")
-	defer grpclog.Println("agent", a.service.Name+"/"+a.service.ID, "exit")
-	a.service.OnDiscovery = a.onDiscovery
-	a.service.OnConfigUpdated = a.OnConfigUpdated
-	a.service.OnControl = a.onControl
-	a.service.OnExec = a.onExec
-	a.service.Endpoints = strings.Split(endpoints, ",")
-	a.service.Register()
+	grpclog.Println("agent", a.provider.Name+"/"+a.provider.ID, "running")
+	defer grpclog.Println("agent", a.provider.Name+"/"+a.provider.ID, "exit")
+	a.provider.OnDiscovery = a.onDiscovery
+	a.provider.OnConfigUpdated = a.OnConfigUpdated
+	a.provider.OnControl = a.onControl
+	a.provider.OnExec = a.onExec
+	a.provider.Endpoints = strings.Split(endpoints, ",")
+	go a.provider.Register()
 	for {
 		select {
 		case <-a.done:
-			//a.service.Unregister()
+			a.provider.Unregister()
 			return
 		case cmd := <-a.ch:
-			grpclog.Println(cmd)
+			switch cmd {
+			case "reload":
+				grpclog.Println(cmd)
+				ins, err := loadServiceFromFile(a.path)
+				if err == nil {
+					a.provider.Update(ins)
+				} else {
+					grpclog.Println(err)
+				}
+			}
+
 		}
 	}
 }
