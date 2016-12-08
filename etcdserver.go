@@ -21,13 +21,19 @@ var (
 	AdvertisePeerAddr = "http://127.0.0.1:2380"
 	//AdvertiseClientAddr ....
 	AdvertiseClientAddr = "http://127.0.0.1:2379"
+	//InitialCluster ....
+	InitialCluster = ""
+	//ClusterToken ....
+	ClusterToken = "wheel-cluster-001"
+	//ClusterState ....
+	ClusterState = "new"
+	//EtcdName ....
+	EtcdName = "wheel"
 )
 
 const (
 	//EtcdDirectory ....
 	EtcdDirectory = "wheel.etcd"
-	//EtcdName ....
-	EtcdName = "wheel"
 )
 
 func parseUrls(rawurls string) ([]url.URL, error) {
@@ -64,11 +70,20 @@ func startEtcd(ready func() error) error {
 		return err
 	}
 	cfg.ACUrls = acurls
-	cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	//etcd01=http://192.168.12.37:2380,etcd02=http://192.168.12.178:2380,etcd03=http://192.168.12.179:2380
+	if InitialCluster == "" {
+		cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	} else {
+		cfg.InitialCluster = InitialCluster
+		cfg.ClusterState = ClusterState
+		cfg.InitialClusterToken = ClusterToken
+	}
+	log.Println("InitialCluster==========", cfg.InitialCluster)
+
 	cfg.AutoCompactionRetention = 32
 	cfg.Dir = path.Join(WorkDir, EtcdDirectory)
-	cfg.PeerAutoTLS = true
-	cfg.ClientAutoTLS = true
+	cfg.PeerAutoTLS = false
+	cfg.ClientAutoTLS = false
 	e, err := embed.StartEtcd(cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -82,5 +97,12 @@ func startEtcd(ready func() error) error {
 		log.Println("server took too long to start!")
 	}
 	return <-e.Err()
+}
 
+func parserInitialCluster(name, raw string) string {
+	var ret = ""
+	for _, u := range strings.Split(raw, ",") {
+		ret = ret + "," + name + "=" + u
+	}
+	return ret[1:]
 }
