@@ -1,0 +1,27 @@
+[Unit]
+Description=Bblwheel Server
+After=network.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/var/lib/bblwheel/
+EnvironmentFile=-/etc/bblwheel/bblwheel.conf
+User=bblwheel
+# set GOMAXPROCS to number of processors
+ExecStart=/bin/bash -c "GOMAXPROCS=$(nproc) /usr/bin/bblwheeld -client.listen.addr=\"${CLIENT_LISTEN_ADDR}\" \
+								-peer.listen.addr=\"${PEER_LISTEN_ADDR}\" \
+								-client.advertise.addr=\"${CLIENT_ADVERTISE_ADDR}\" \
+								-peer.advertise.addr=\"${PEER_ADVERTISE_ADDR}\" \
+								-cluster.addr=\"${CLUSTER_ADDR}\" \
+								-cluster.name=\"${CLUSTER_NAME}\" \
+								-cluster.state=\"${CLUSTER_STATE}\" \
+								-cluster.token=\"${CLUSTER_TOKEN}\" \
+								-workdir=\"${WORK_DIR\""
+
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
