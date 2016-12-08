@@ -204,8 +204,9 @@ func (s *ServiceProvider) Register() {
 		for {
 			ev, err := ch.Recv()
 			if err != nil {
-				grpclog.Println(err)
 				ticker.Stop()
+				grpclog.Println(err)
+				time.Sleep(3 * time.Second)
 				break
 			}
 			switch ev.Type {
