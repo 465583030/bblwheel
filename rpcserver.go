@@ -3,14 +3,10 @@ package bblwheel
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
 
 	"golang.org/x/net/context"
-
-	"log"
-
-	grpclog "log"
-
 	"google.golang.org/grpc"
 )
 
@@ -64,7 +60,7 @@ func (s *Server) Serve() error {
 	}
 	lis, err := net.Listen("tcp", RPCListenAddr)
 	if err != nil {
-		grpclog.Fatalf("failed to listen: %v", err)
+		log.Fatalf("failed to listen: %v", err)
 	}
 	var opts []grpc.ServerOption
 	server := grpc.NewServer(opts...)
@@ -80,7 +76,7 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 		if err := recover(); err != nil {
 			resp.Status = 500
 			resp.StatusText = "500"
-			grpclog.Println(err)
+			log.Println(err)
 		}
 	}()
 	if f, found := s.routerA[req.Path]; found {
@@ -95,7 +91,7 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 func (s *Server) Channel(ch Rpc_ChannelServer) error {
 	defer func() {
 		if err := recover(); err != nil {
-			grpclog.Println(err)
+			log.Println(err)
 		}
 	}()
 	for {

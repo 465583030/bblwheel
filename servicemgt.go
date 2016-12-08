@@ -1,16 +1,12 @@
 package bblwheel
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
 	"strings"
 	"sync"
-
-	"encoding/json"
-
-	"fmt"
-
 	"time"
-
-	grpclog "log"
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
@@ -39,7 +35,7 @@ type servicemgt struct {
 }
 
 func (s *servicemgt) register(srv *Service) error {
-	//grpclog.Println("servicemgt.register", srv)
+	//log.Println("servicemgt.register", srv)
 	if srv.Name == "" {
 		return fmt.Errorf("Service.Name is required")
 	}
@@ -80,7 +76,7 @@ func (s *servicemgt) unregister(id, name string) error {
 }
 
 func (s *servicemgt) update(srv *Service) error {
-	//grpclog.Println("servicemgt.update", srv)
+	//log.Println("servicemgt.update", srv)
 	if srv.Name == "" {
 		return fmt.Errorf("Service.Name is required")
 	}
@@ -120,18 +116,18 @@ func (s *servicemgt) findServiceList(names []string) []*Service {
 	for _, name := range names {
 		resp, err := GetWithPrfix(registerKey(name))
 		if err != nil {
-			grpclog.Println(err)
+			log.Println(err)
 			break
 		}
 		for _, kv := range resp.Kvs {
 			o := Service{}
 			err = json.Unmarshal(kv.Value, &o)
 			if err != nil {
-				grpclog.Println(err)
+				log.Println(err)
 				continue
 			}
 			if o.Name != name {
-				grpclog.Println(fmt.Errorf("error Service.Name %s <> %s", o.Name, name))
+				log.Println(fmt.Errorf("error Service.Name %s <> %s", o.Name, name))
 				continue
 			}
 			list = append(list, &o)
@@ -143,7 +139,7 @@ func (s *servicemgt) findAllService() []*Service {
 	var list = []*Service{}
 	resp, err := GetWithPrfix(registerKey("/"))
 	if err != nil {
-		grpclog.Println(err)
+		log.Println(err)
 		return list
 	}
 	if resp.Count != int64(len(resp.Kvs)) {
@@ -154,7 +150,7 @@ func (s *servicemgt) findAllService() []*Service {
 		o := Service{}
 		err = json.Unmarshal(kv.Value, &o)
 		if err != nil {
-			grpclog.Println(err)
+			log.Println(err)
 			continue
 		}
 		list = append(list, &o)
@@ -163,24 +159,24 @@ func (s *servicemgt) findAllService() []*Service {
 }
 func (s *servicemgt) keepalive() {
 	for {
-		grpclog.Println("keepalive")
+		log.Println("keepalive")
 		ch, err := KeepAlive(DefaultTTL)
 		if err != nil {
-			grpclog.Println(err)
+			log.Println(err)
 		}
 		for _ = range ch {
 			if s.observer != nil {
 				s.observer.onKeepAlive()
 			}
 		}
-		grpclog.Println("keepalive", "lease expired or revoked.")
+		log.Println("keepalive", "lease expired or revoked.")
 		time.Sleep(1 * time.Second)
 	}
 
 }
 func (s *servicemgt) watch() {
 	s.once.Do(func() {
-		grpclog.Println("watch register")
+		log.Println("watch register")
 		var err error
 		err = WaitPrefixEvents(ServiceRegisterPrefix+"/",
 			[]mvccpb.Event_EventType{mvccpb.PUT, mvccpb.DELETE},
@@ -191,7 +187,7 @@ func (s *servicemgt) watch() {
 				///v1/bblwheel/service/register/srvA/001 aaa
 				///v1/bblwheel/service/register/srvA/002 aaa
 				if len(key) != 2 || key[0] == "" || key[1] == "" {
-					grpclog.Println("invalid service info", string(event.Kv.Key), string(event.Kv.Value))
+					log.Println("invalid service info", string(event.Kv.Key), string(event.Kv.Value))
 					return
 				}
 				if event.Type == mvccpb.PUT {
@@ -199,8 +195,8 @@ func (s *servicemgt) watch() {
 						var other = Service{}
 						err = json.Unmarshal(event.Kv.Value, &other)
 						if err != nil {
-							grpclog.Println(err)
-							grpclog.Println(string(event.Kv.Key), string(event.Kv.Value))
+							log.Println(err)
+							log.Println(string(event.Kv.Key), string(event.Kv.Value))
 							return
 						}
 						s.observer.onUpdate(&other)
@@ -212,7 +208,7 @@ func (s *servicemgt) watch() {
 				}
 			})
 		if err != nil {
-			grpclog.Fatalln("watch register", err)
+			log.Fatalln("watch register", err)
 		}
 	})
 }
