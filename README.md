@@ -1,5 +1,5 @@
 # bblwheel
-一个基于etcd、grpc的服务治理中心，具备简单服务注册、发现、配置、授权、rpc框架等功能，api还没有稳定，请不要用于生产环境
+一个基于etcd、grpc的服务治理中心，具备简单服务注册、发现、配置、授权、rpc框架等功能
 
 ###编译
 [Golang 1.6+](https://golang.org/dl/)
@@ -10,7 +10,9 @@
 ###启动集群
 
 	./bblwheeld \
-		#设置客户端监听地址1
+		#设置服务器对外服务端口
+	    -bblwheel.listen.addr=0.0.0.0:23790
+		#设置client监听地址
 		-client.listen.addr=http://10.27.123.131:2379,http://127.0.0.1:2379 \
 		#设置peer监听地址
 		-peer.listen.addr=http://10.27.123.131:2380 \

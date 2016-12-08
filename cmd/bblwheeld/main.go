@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	flag.StringVar(&bblwheel.ListenAddr, "bblwheel.address", bblwheel.ListenAddr, "rpc listen address")
+	flag.StringVar(&bblwheel.ListenAddr, "bblwheel.listen.addr", bblwheel.ListenAddr, "bblwheel listen address")
 	flag.StringVar(&bblwheel.WorkDir, "workdir", bblwheel.WorkDir, "work directory")
 	ip, err := netutil.GetDefaultHost()
 	if err != nil {
