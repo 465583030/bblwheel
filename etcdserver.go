@@ -1,7 +1,6 @@
 package bblwheel
 
 import (
-	"flag"
 	"log"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"path"
 
 	"github.com/coreos/etcd/embed"
-	"github.com/coreos/etcd/pkg/netutil"
 )
 
 var (
@@ -31,22 +29,6 @@ const (
 	//EtcdName ....
 	EtcdName = "wheel"
 )
-
-func init() {
-	ip, err := netutil.GetDefaultHost()
-	if err != nil {
-		ip = "127.0.0.1"
-		log.Println(err)
-	}
-	AdvertisePeerAddr = "http://" + ip + ":2380"
-	AdvertiseClientAddr = "http://" + ip + ":2379"
-	flag.StringVar(&ListenPeerAddr, "peer.address", ListenPeerAddr, "peer listen address")
-	flag.StringVar(&ListenClientAddr, "client.address", ListenClientAddr, "client listen address")
-
-	flag.StringVar(&AdvertisePeerAddr, "advertise.peer.address", AdvertisePeerAddr, "advertise peer listen address")
-	flag.StringVar(&AdvertiseClientAddr, "advertise.client.address", AdvertiseClientAddr, "advertise client listen address")
-
-}
 
 func parseUrls(rawurls string) ([]url.URL, error) {
 	rurls := []url.URL{}

@@ -40,8 +40,6 @@ var (
 )
 
 func init() {
-	flag.StringVar(&ListenAddr, "bblwheel.address", ListenAddr, "rpc listen address")
-	flag.StringVar(&WorkDir, "workdir", WorkDir, "work directory")
 	grpclog.SetFlags(grpclog.Lshortfile | grpclog.LstdFlags)
 }
 

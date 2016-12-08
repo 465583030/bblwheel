@@ -19,10 +19,6 @@ var (
 	RPCListenAddr = "0.0.0.0:7654"
 )
 
-func init() {
-	flag.StringVar(&RPCListenAddr, "rpc.address", RPCListenAddr, "rpc listen address")
-}
-
 //HandleCall ....
 type HandleCall func(*Request, *Response) error
 
