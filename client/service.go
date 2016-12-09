@@ -41,6 +41,7 @@ type ServiceProvider struct {
 	conn            *grpc.ClientConn
 	close           chan struct{}
 	once            *bblwheel.Once
+	haconn          *haconn
 }
 
 //NewServiceProvider ....
@@ -58,18 +59,17 @@ func (s *ServiceProvider) disconnect() {
 func (s *ServiceProvider) reconnect() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	if s.close == nil {
+		s.close = make(chan struct{})
+	}
+	if s.haconn == nil {
+		s.haconn = newHaConn(s.Endpoints)
+	}
 	for {
 		if s.conn != nil {
 			s.conn.Close()
 		}
-		var opts = []grpc.DialOption{grpc.WithInsecure()}
-		conn, err := grpc.Dial(s.Endpoints[0], opts...)
-		if err != nil {
-			grpclog.Println("grpc.Dial", err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		s.conn = conn
+		s.conn = s.haconn.Get()
 		return
 	}
 }
@@ -158,9 +158,6 @@ func (s *ServiceProvider) Register() {
 	if s.conn == nil {
 		s.reconnect()
 	}
-	if s.close == nil {
-		s.close = make(chan struct{})
-	}
 	kv := bblwheel.Event{Type: bblwheel.Event_KEEPALIVE}
 	for {
 		select {
@@ -181,7 +178,6 @@ func (s *ServiceProvider) Register() {
 		err = ch.Send(&kv)
 		if err != nil {
 			grpclog.Println(err)
-			time.Sleep(3 * time.Second)
 			s.reconnect()
 			continue
 		}
@@ -206,7 +202,6 @@ func (s *ServiceProvider) Register() {
 			if err != nil {
 				ticker.Stop()
 				grpclog.Println(err)
-				time.Sleep(3 * time.Second)
 				break
 			}
 			switch ev.Type {

@@ -359,6 +359,13 @@ func (s *Wheel) onKeepAlive() {
 	grpclog.Printf("NumGoroutine %d NumCPU %d\n", runtime.NumGoroutine(), runtime.NumCPU())
 }
 
+const (
+	//MaxCurrentStream ....
+	MaxCurrentStream = 1 << 19
+	//MaxMsgSize ....
+	MaxMsgSize = 1 << 16
+)
+
 //Serve ....
 func (s *Wheel) serve() error {
 	if !flag.Parsed() {
@@ -368,7 +375,8 @@ func (s *Wheel) serve() error {
 	if err != nil {
 		grpclog.Fatalf("failed to listen: %v", err)
 	}
-	var opts []grpc.ServerOption
+	var opts = []grpc.ServerOption{grpc.MaxConcurrentStreams(MaxCurrentStream), grpc.MaxMsgSize(MaxMsgSize)}
+
 	server := grpc.NewServer(opts...)
 	RegisterBblWheelServer(server, s)
 	grpclog.Println("bblwheel server listen at", ListenAddr)

@@ -1,23 +1,28 @@
 package client
 
 import (
+	"log"
+	"time"
+
+	"github.com/satori/go.uuid"
 	"google.golang.org/grpc"
 )
 
-type connwrapper struct {
-	*grpc.ClientConn
-	ha *haconn
-}
-
-func (c *connwrapper) Close() {
-
-}
-
 type haconn struct {
-	endpoints map[string]bool
-	clients   []*grpc.ClientConn
+	endpoints []string
+	opts      []grpc.DialOption
 }
 
-func (c *haconn) Close() {
-
+func newHaConn(endpoints []string) *haconn {
+	return &haconn{endpoints: endpoints, opts: []grpc.DialOption{grpc.WithInsecure(), grpc.WithBackoffMaxDelay(30 * time.Second)}}
+}
+func (c *haconn) Get() *grpc.ClientConn {
+	for {
+		conn, err := grpc.Dial(c.endpoints[int(Murmur3(uuid.NewV4().Bytes()))%len(c.endpoints)], c.opts...)
+		if err != nil {
+			log.Println("grpc.Dial", err)
+			continue
+		}
+		return conn
+	}
 }
