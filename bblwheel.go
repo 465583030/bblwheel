@@ -136,7 +136,7 @@ func (s *Wheel) Events(ch BblWheel_EventsServer) error {
 				srv *Service
 			}{ch, srv})
 		}
-		grpclog.Println("Events channel", ch, "exist")
+		grpclog.Println("Events channel", ch, "exit")
 	}()
 	for {
 		ev, err := ch.Recv()
@@ -171,7 +171,7 @@ func (s *Wheel) Events(ch BblWheel_EventsServer) error {
 	}
 }
 func (s *Wheel) doExit(ev *event) {
-	grpclog.Println("doExit", ev)
+	//grpclog.Println("doExit", ev)
 	obj := ev.ctx.obj.(*struct {
 		ch  BblWheel_EventsServer
 		srv *Service
@@ -228,7 +228,7 @@ func (s *Wheel) onGrant(from string, to string) {
 	}{from, to})
 }
 func (s *Wheel) doGrant(ev *event) {
-	grpclog.Println("doGrant", ev)
+	//grpclog.Println("doGrant", ev)
 	///v1/bblwheel/service/grant/serviceA/testService1 1
 	obj := ev.ctx.obj.(*struct {
 		from string
@@ -261,7 +261,7 @@ func (s *Wheel) onCancel(from string, to string) {
 }
 
 func (s *Wheel) doCancel(ev *event) {
-	grpclog.Println("doConfigChanged", ev)
+	//grpclog.Println("doConfigChanged", ev)
 	obj := ev.ctx.obj.(*struct {
 		from string
 		to   string
@@ -293,14 +293,14 @@ func (s *Wheel) onConfigChanged(key string, item *ConfigEntry) {
 	}{key, item})
 }
 func (s *Wheel) doConfigChanged(ev *event) {
-	grpclog.Println("doConfigChanged", ev)
+	//grpclog.Println("doConfigChanged", ev)
 	obj := ev.ctx.obj.(*struct {
 		key  string
 		item *ConfigEntry
 	})
 	key := obj.key
 	item := obj.item
-	grpclog.Println("onConfigChanged", key, item)
+	//grpclog.Println("onConfigChanged", key, item)
 	for _, ins := range s.instances {
 		for _, n := range ins.DependentConfigs {
 			if n == key {
@@ -310,7 +310,7 @@ func (s *Wheel) doConfigChanged(ev *event) {
 	}
 }
 func (s *Wheel) doUpdate(ev *event) {
-	grpclog.Println("doUpdate", ev)
+	//grpclog.Println("doUpdate", ev)
 	srv := ev.ctx.obj.(*Service)
 	if ins, has := s.instances[srv.key()]; has {
 		ins.Service = srv
@@ -328,7 +328,7 @@ func (s *Wheel) doUpdate(ev *event) {
 	}
 }
 func (s *Wheel) onUpdate(srv *Service) {
-	grpclog.Println("onUpdate", srv.key(), Service_Status_name[int32(srv.Status)])
+	grpclog.Println("onUpdate", srv, Service_Status_name[int32(srv.Status)])
 	s.events <- newEvent("onUpdate", srv)
 
 }
@@ -339,7 +339,7 @@ func (s *Wheel) onDelete(name, id string) {
 	}{name, id})
 }
 func (s *Wheel) doDelete(ev *event) {
-	grpclog.Println("doDelete", ev)
+	//grpclog.Println("doDelete", ev)
 	obj := ev.ctx.obj.(*struct {
 		name, id string
 	})
@@ -385,6 +385,7 @@ func (s *Wheel) dowork() {
 	defer grpclog.Println("Wheel.dowork exit")
 	for ev := range s.events {
 		if f, has := s.fn[ev.name]; has {
+			grpclog.Println(ev)
 			f(ev)
 		} else {
 			grpclog.Println(ev.name, "func not found")

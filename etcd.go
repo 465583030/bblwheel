@@ -4,8 +4,6 @@ import (
 	"errors"
 	"time"
 
-	grpclog "log"
-
 	v3 "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/mvcc/mvccpb"
@@ -68,26 +66,26 @@ func GetStringWithPrfix(keyPrefix string) (map[string]string, error) {
 
 //GetKv ....
 func GetKv(key string) (*v3.GetResponse, error) {
-	grpclog.Println("GetKv", key)
+	//grpclog.Println("GetKv", key)
 	return cli.Get(context.TODO(), key, v3.WithLimit(1))
 }
 
 //GetWithPrfix ....
 func GetWithPrfix(keyPrefix string) (*v3.GetResponse, error) {
-	grpclog.Println("GetWithPrfix", keyPrefix)
+	//grpclog.Println("GetWithPrfix", keyPrefix)
 	return cli.Get(context.TODO(), keyPrefix, v3.WithPrefix())
 }
 
 //PutKv ....
 func PutKv(key, value string) error {
-	grpclog.Println("PutKv", key, value)
+	//grpclog.Println("PutKv", key, value)
 	_, err := cli.Put(context.TODO(), key, value)
 	return err
 }
 
 //PutKvWithTTL ....
 func PutKvWithTTL(key, value string, ttl int64) error {
-	grpclog.Println("PutKvWithTTL", key, value, ttl)
+	//grpclog.Println("PutKvWithTTL", key, value, ttl)
 	lease, err := cli.Grant(context.TODO(), ttl)
 	if err != nil {
 		return err
@@ -98,7 +96,7 @@ func PutKvWithTTL(key, value string, ttl int64) error {
 
 //DelKv ....
 func DelKv(key string) error {
-	grpclog.Println("DelKv", key)
+	//grpclog.Println("DelKv", key)
 	_, err := cli.Delete(context.TODO(), key)
 	return err
 }
