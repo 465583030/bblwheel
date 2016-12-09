@@ -72,12 +72,13 @@ message Stats {
 
 message Event {
     enum EventType {
-        DISCOVERY = 0;  //s->c
+        DISCOVERY = 0; //s->c
         CONFIGUPDATE = 1; //s->c
         REGISTER_RESULT = 2; //s->c
         KEEPALIVE = 3; //c->s
         CONTROL = 4; //s->c
         EXEC = 5; //s->c
+        GRANT = 6; //s->c
     }
     EventType Type = 1;
     Service Service = 2;

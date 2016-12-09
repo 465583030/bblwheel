@@ -8,7 +8,8 @@
 	go build -o bblwheeld  github.com/gqf2008/bblwheel/cmd/bblwheeld
 
 ###启动集群
-
+**按照raft设计原理，故障节点数不能大于49.99%，所以节点数不能少于3个，3个节点可以忍受1个节点故障，节点数建议为奇数**
+	
 	./bblwheeld \
 		#设置服务器对外服务端口
 	    -bblwheel.listen.addr=0.0.0.0:23790

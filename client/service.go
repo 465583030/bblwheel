@@ -202,6 +202,9 @@ func (s *ServiceProvider) Register() {
 			if err != nil {
 				ticker.Stop()
 				grpclog.Println(err)
+				if grpc.Code(err).String() == "2" {
+					time.Sleep(3 * time.Second)
+				}
 				break
 			}
 			switch ev.Type {
