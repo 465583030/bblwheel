@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/gqf2008/bblwheel"
 	"github.com/satori/go.uuid"
 	"google.golang.org/grpc"
 )
@@ -18,7 +19,7 @@ func newHaConn(endpoints []string) *haconn {
 }
 func (c *haconn) Get() *grpc.ClientConn {
 	for {
-		conn, err := grpc.Dial(c.endpoints[int(Murmur3(uuid.NewV4().Bytes()))%len(c.endpoints)], c.opts...)
+		conn, err := grpc.Dial(c.endpoints[int(bblwheel.Murmur3(uuid.NewV4().Bytes()))%len(c.endpoints)], c.opts...)
 		if err != nil {
 			log.Println("grpc.Dial", err)
 			continue

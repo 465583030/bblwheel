@@ -1,16 +1,16 @@
 syntax = "proto3";
 
-option java_package = "com.hemayun.bblwheel";
+option java_package = "com.hemayun.bblwheel.rpc";
 option java_generate_equals_and_hash = true;
 option optimize_for = SPEED;
 
 
 
-package bblwheel;
+package rpc;
 
 message Request {
     int64 ID = 1;
-    string ClintID = 2;
+    string ClientID = 2;
     string ClientAddr = 3;
     int64 Timestamp = 4;
     repeated string ForwardFor = 5;

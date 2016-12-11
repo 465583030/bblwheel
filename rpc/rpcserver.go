@@ -1,10 +1,11 @@
-package bblwheel
+package rpc
 
 import (
 	"flag"
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -40,8 +41,9 @@ func NewRPCServer() *Server {
 
 func (r *Request) newResponse() *Response {
 	return &Response{
-		ClientID:   r.ClintID,
+		ClientID:   r.ClientID,
 		ID:         r.ID,
+		Timestamp:  time.Now().Unix(),
 		Status:     200,
 		StatusText: "OK",
 	}
@@ -83,6 +85,7 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 		if err := f(req, resp); err != nil {
 			return nil, err
 		}
+		return resp, nil
 	}
 	return resp, fmt.Errorf("Path: %s, function not found", req.Path)
 }

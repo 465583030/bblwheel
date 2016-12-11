@@ -1,6 +1,6 @@
 // http://en.wikipedia.org/wiki/MurmurHash
 
-package client
+package bblwheel
 
 const (
 	c1 = 0xcc9e2d51
