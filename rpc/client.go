@@ -46,7 +46,7 @@ type hashClient struct {
 	opts      []grpc.DialOption
 	lock      sync.RWMutex
 	con       *grpc.ClientConn
-	ch        Rpc_ChannelClient
+	ch        FuncService_ChannelClient
 }
 
 func (c *hashClient) Clone() Client {
@@ -86,13 +86,13 @@ func (c *hashClient) Call(ctx context.Context, req *Request) (*Response, error) 
 	if c.con == nil {
 		c.con = c.connect()
 	}
-	cli := NewRpcClient(c.con)
+	cli := NewFuncServiceClient(c.con)
 	return cli.Call(ctx, req)
 }
 func (c *hashClient) Send(msg *Message) error {
 	if c.con == nil {
 		c.con = c.connect()
-		cli := NewRpcClient(c.con)
+		cli := NewFuncServiceClient(c.con)
 		ch, err := cli.Channel(context.Background())
 		if err != nil {
 			return err
@@ -105,7 +105,7 @@ func (c *hashClient) Send(msg *Message) error {
 func (c *hashClient) Recv() (*Message, error) {
 	if c.con == nil {
 		c.con = c.connect()
-		cli := NewRpcClient(c.con)
+		cli := NewFuncServiceClient(c.con)
 		ch, err := cli.Channel(context.Background())
 		if err != nil {
 			return nil, err

@@ -41,7 +41,7 @@ message Message {
     map<string, string> Params = 7;
 }
 
-service Rpc {
+service FuncService {
   rpc Call(Request) returns (Response);
   rpc Channel(stream Message) returns (stream Message);
 }

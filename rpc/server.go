@@ -22,15 +22,15 @@ type HandleCall func(*Request, *Response) error
 //HandleMessage ....
 type HandleMessage func(*Message) (*Message, error)
 
-var defrpc = NewRPCServer()
+var defrpc = NewFuncServer()
 
 //ListenAndServe ....
 func ListenAndServe() error {
 	return defrpc.Serve()
 }
 
-//NewRPCServer ....
-func NewRPCServer() *Server {
+//NewFuncServer ....
+func NewFuncServer() *Server {
 	bbl := &Server{
 		routerA: map[string]func(*Request, *Response) error{},
 		routerB: map[string]func(*Message) (*Message, error){},
@@ -66,7 +66,7 @@ func (s *Server) Serve() error {
 	}
 	var opts []grpc.ServerOption
 	server := grpc.NewServer(opts...)
-	RegisterRpcServer(server, s)
+	RegisterFuncServiceServer(server, s)
 	log.Println("bblwheel rpc server listen at", RPCListenAddr)
 	return server.Serve(lis)
 }
@@ -91,7 +91,7 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 }
 
 //Channel ....
-func (s *Server) Channel(ch Rpc_ChannelServer) error {
+func (s *Server) Channel(ch FuncService_ChannelServer) error {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Println(err)

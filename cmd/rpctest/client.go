@@ -26,7 +26,7 @@ func init() {
 	flag.IntVar(&count, "count", 1000, "每个并发请求数")
 	flag.IntVar(&t, "t", 60, "测试时间，单位秒")
 }
-func main() {
+func main1() {
 	flag.Parse()
 	var wg sync.WaitGroup
 	bt := time.Now()
