@@ -26,7 +26,7 @@ func init() {
 	flag.IntVar(&count, "count", 1000, "每个并发请求数")
 	flag.IntVar(&t, "t", 60, "测试时间，单位秒")
 }
-func main1() {
+func main() {
 	flag.Parse()
 	var wg sync.WaitGroup
 	bt := time.Now()
@@ -44,7 +44,7 @@ func doRequest(wg *sync.WaitGroup, c int) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	cli := rpc.NewRpcClient(conn)
+	cli := rpc.NewFuncServiceClient(conn)
 	for i := 0; i < c; i++ {
 		_, err := cli.Call(context.Background(), &rpc.Request{ID: int64(i), ClientID: "aaaa", Path: "/echo"})
 		if err != nil {
