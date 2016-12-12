@@ -14,6 +14,9 @@ func (c *Config) PutAll(all map[string]string) {
 
 //Get ....
 func (c *Config) Get(key string) (string, bool) {
+	if c.Items == nil {
+		return "", false
+	}
 	for _, item := range c.Items {
 		if item.Key == key {
 			return item.Value, true

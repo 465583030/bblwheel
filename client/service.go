@@ -4,11 +4,15 @@ import (
 	"io"
 	"io/ioutil"
 	grpclog "log"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gqf2008/bblwheel"
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 
 	"fmt"
 
@@ -126,14 +130,10 @@ func (s *ServiceProvider) LookupConfig(deps []string) map[string]*bblwheel.Confi
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
 	res, err := cli.LookupConfig(context.Background(), &bblwheel.LookupConfigReq{DependentConfigs: deps})
-	if err == io.EOF {
+	if err != nil {
 		grpclog.Println("ServiceInstance.LookupConfig", err)
 		s.reconnect()
 		return s.LookupConfig(deps)
-	}
-	if err != nil {
-		grpclog.Println(err)
-		return map[string]*bblwheel.Config{}
 	}
 	return res.Configs
 }
@@ -216,6 +216,10 @@ func (s *ServiceProvider) Register() {
 				grpclog.Println("ServiceProvider", s.Name+"/"+s.ID, "ticker", t)
 				s.lock.RLock()
 				kv.Service = s.Service
+				if kv.Service.Stats == nil {
+					kv.Service.Stats = &bblwheel.Stats{}
+				}
+				s.stat(kv.Service.Stats)
 				s.lock.RUnlock()
 				if err := ch.Send(&kv); err != nil {
 					grpclog.Println(err)
@@ -251,6 +255,28 @@ func (s *ServiceProvider) Register() {
 			}
 		}
 	}
+}
+
+var _startTime = time.Now()
+
+func (s *ServiceProvider) stat(stats *bblwheel.Stats) {
+	v, _ := mem.VirtualMemory()
+	stats.LastActiveTime = time.Now().Unix()
+	stats.UsedMem = int64(v.Total - v.Free)
+	stats.FreeMem = int64(v.Free)
+	stats.ServiceID = s.ID
+	stats.ServiceName = s.Name
+	stats.UpTime = int64(time.Now().Sub(_startTime)) / int64(time.Second)
+	stats.Threads = int64(runtime.NumGoroutine())
+	stats.Other = map[string]string{}
+	i, _ := cpu.Counts(true)
+	stats.Other["cpu_num"] = fmt.Sprintf("%v", i)
+	f, _ := cpu.Percent(0, false)
+	stats.Other["used_cpu"] = fmt.Sprintf("%f%%", f[0])
+	avg, _ := load.Avg()
+	stats.Other["load1"] = fmt.Sprintf("%f%%", avg.Load1)
+	stats.Other["load5"] = fmt.Sprintf("%f%%", avg.Load5)
+	stats.Other["load15"] = fmt.Sprintf("%f%%", avg.Load15)
 }
 
 //Key ....
