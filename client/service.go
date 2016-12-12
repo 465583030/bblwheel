@@ -2,11 +2,17 @@ package client
 
 import (
 	"io"
+	"io/ioutil"
 	grpclog "log"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gqf2008/bblwheel"
+
+	"fmt"
+
+	"encoding/json"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -46,7 +52,27 @@ type ServiceProvider struct {
 
 //NewServiceProvider ....
 func NewServiceProvider() *ServiceProvider {
-	return &ServiceProvider{LastActiveTime: time.Now().Unix()}
+	return &ServiceProvider{Service: &bblwheel.Service{}, LastActiveTime: time.Now().Unix()}
+}
+
+//NewServiceProviderFromFile ....
+func NewServiceProviderFromFile(file string) (*ServiceProvider, error) {
+	b, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	sp := &ServiceProvider{Service: &bblwheel.Service{}, LastActiveTime: time.Now().Unix()}
+	err = json.Unmarshal(b, sp)
+	if err != nil {
+		return nil, err
+	}
+	if len(sp.Endpoints) == 0 {
+		return nil, fmt.Errorf("endpoints is required")
+	}
+	if strings.TrimSpace(sp.ID) == "" || strings.TrimSpace(sp.Name) == "" || strings.TrimSpace(sp.DataCenter) == "" || strings.TrimSpace(sp.Node) == "" {
+		return nil, fmt.Errorf("service id,name,dc,node is required")
+	}
+	return sp, nil
 }
 
 //Disconnect ....
@@ -225,4 +251,9 @@ func (s *ServiceProvider) Register() {
 			}
 		}
 	}
+}
+
+//Key ....
+func (s *ServiceProvider) Key() string {
+	return fmt.Sprintf("%s/%s", s.Name, s.ID)
 }

@@ -7,6 +7,8 @@ import (
 	"net"
 	"time"
 
+	"sync"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -26,7 +28,7 @@ var defrpc = NewFuncServer()
 
 //ListenAndServe ....
 func ListenAndServe() error {
-	return defrpc.Serve()
+	return defrpc.Serve(RPCListenAddr)
 }
 
 //NewFuncServer ....
@@ -51,24 +53,44 @@ func (r *Request) newResponse() *Response {
 
 //Server ....
 type Server struct {
+	server  *grpc.Server
+	wg      sync.WaitGroup
 	routerA map[string]func(*Request, *Response) error
 	routerB map[string]func(*Message) (*Message, error)
 }
 
 //Serve ....
-func (s *Server) Serve() error {
+func (s *Server) Serve(addr string) error {
 	if !flag.Parsed() {
 		flag.Parse()
 	}
-	lis, err := net.Listen("tcp", RPCListenAddr)
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	var opts []grpc.ServerOption
 	server := grpc.NewServer(opts...)
 	RegisterFuncServiceServer(server, s)
-	log.Println("bblwheel rpc server listen at", RPCListenAddr)
-	return server.Serve(lis)
+	log.Println("gRPC server listen at", addr)
+	s.server = server
+	s.wg.Add(1)
+	go func() {
+		log.Println(server.Serve(lis))
+		s.wg.Done()
+	}()
+	return nil
+}
+
+//Join ....
+func (s *Server) Join() {
+	s.wg.Wait()
+}
+
+//Stop ....
+func (s *Server) Stop() {
+	if s.server != nil {
+		s.server.GracefulStop()
+	}
 }
 
 //Call ....

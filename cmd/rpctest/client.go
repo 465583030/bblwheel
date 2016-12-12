@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/gqf2008/bblwheel/rpc"
-	"google.golang.org/grpc"
 )
 
 var endpoint string
@@ -28,7 +27,7 @@ func init() {
 }
 func main() {
 	flag.Parse()
-	conn, err := grpc.Dial(endpoint, []grpc.DialOption{grpc.WithInsecure(), grpc.WithTimeout(30 * time.Second)}...)
+	cli, err := rpc.NewClient(endpoint)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -36,15 +35,14 @@ func main() {
 	bt := time.Now()
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
-		go doRequest(&wg, conn, count)
+		go doRequest(&wg, cli, count)
 	}
 	wg.Wait()
 	log.Println("concurrency", concurrency, "count", count, "cost", "total request", concurrency*count, time.Now().Unix()-bt.Unix(), "s")
 }
 
-func doRequest(wg *sync.WaitGroup, conn *grpc.ClientConn, c int) {
+func doRequest(wg *sync.WaitGroup, cli *rpc.FuncClient, c int) {
 	defer wg.Done()
-	cli := rpc.NewFuncServiceClient(conn)
 	for i := 0; i < c; i++ {
 		_, err := cli.Call(context.Background(), &rpc.Request{ID: int64(i), ClientID: "aaaa", Path: "/echo"})
 		if err != nil {
