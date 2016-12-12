@@ -1,0 +1,11 @@
+{
+  "ID": "001",
+  "Address": "127.0.0.1:7654",
+  "DataCenter": "aliyun-huadong1",
+  "Node": "cloud-test-001",
+  "Weight": 100,
+  "Name": "echoserver",
+  "Single": false,
+  "Status": 1,
+  "Endpoints":["127.0.0.1:23790"]
+}

@@ -1,0 +1,9 @@
+{
+  "ID": "000",
+  "DataCenter": "aliyun-huadong1",
+  "Node": "cloud-test-001",
+  "Name": "echoclient",
+  "Status": 1,
+  "Endpoints":["127.0.0.1:23790"],
+  "DependentServices":["echoserver"]
+}
