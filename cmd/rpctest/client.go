@@ -28,22 +28,22 @@ func init() {
 }
 func main() {
 	flag.Parse()
+	conn, err := grpc.Dial(endpoint, []grpc.DialOption{grpc.WithInsecure(), grpc.WithTimeout(30 * time.Second)}...)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	var wg sync.WaitGroup
 	bt := time.Now()
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
-		go doRequest(&wg, count)
+		go doRequest(&wg, conn, count)
 	}
 	wg.Wait()
 	log.Println("concurrency", concurrency, "count", count, "cost", "total request", concurrency*count, time.Now().Unix()-bt.Unix(), "s")
 }
 
-func doRequest(wg *sync.WaitGroup, c int) {
+func doRequest(wg *sync.WaitGroup, conn *grpc.ClientConn, c int) {
 	defer wg.Done()
-	conn, err := grpc.Dial(endpoint, []grpc.DialOption{grpc.WithInsecure(), grpc.WithTimeout(30 * time.Second)}...)
-	if err != nil {
-		log.Fatalln(err)
-	}
 	cli := rpc.NewFuncServiceClient(conn)
 	for i := 0; i < c; i++ {
 		_, err := cli.Call(context.Background(), &rpc.Request{ID: int64(i), ClientID: "aaaa", Path: "/echo"})

@@ -7,110 +7,65 @@ import (
 
 	"context"
 
-	"github.com/gqf2008/bblwheel"
-	uuid "github.com/satori/go.uuid"
 	"google.golang.org/grpc"
 )
 
-var clients = map[string]Client{}
-
-//RegisterClient ....
-func RegisterClient(driver string, c Client) {
-	clients[driver] = c
-}
-
 //NewClient ....
-func NewClient(driver string, endpoints []string) Client {
-	if c, has := clients[driver]; has {
-		c = c.Clone()
-		for _, endpoint := range endpoints {
-			c.AddEndpoint(endpoint)
-		}
-		return c
+func NewClient(endpoint string) (*FuncClient, error) {
+	c := &FuncClient{
+		endpoint: endpoint,
+		opts:     []grpc.DialOption{grpc.WithInsecure(), grpc.WithBackoffMaxDelay(30 * time.Second)},
 	}
-	return &hashClient{endpoints: endpoints, opts: []grpc.DialOption{grpc.WithInsecure(), grpc.WithBackoffMaxDelay(30 * time.Second)}}
+	err := c.connect()
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
-//Client ....
-type Client interface {
-	Clone() Client
-	AddEndpoint(endpoint string)
-	RemoveEndpoint(endpoint string)
-	Call(context.Context, *Request) (*Response, error)
-	Send(*Message) error
-	Recv() (*Message, error)
+//FuncClient 经过测试，单连接和多连接性能差距不大，为了保存实现简单改用单连接方式，不实现连接池
+type FuncClient struct {
+	endpoint string
+	opts     []grpc.DialOption
+	lock     sync.RWMutex
+	conn     *grpc.ClientConn
 }
 
-type hashClient struct {
-	endpoints []string
-	opts      []grpc.DialOption
-	lock      sync.RWMutex
-	con       *grpc.ClientConn
-	ch        FuncService_ChannelClient
+func (c *FuncClient) connect() error {
+	conn, err := grpc.Dial(c.endpoint, c.opts...)
+	if err != nil {
+		log.Println("grpc.Dial", err)
+		return err
+	}
+	c.conn = conn
+	return nil
 }
 
-func (c *hashClient) Clone() Client {
-	return &hashClient{opts: []grpc.DialOption{grpc.WithInsecure(), grpc.WithBackoffMaxDelay(30 * time.Second)}}
+//Close ....
+func (c *FuncClient) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
 
-func (c *hashClient) AddEndpoint(endpoint string) {
-	c.lock.RLock()
-	c.endpoints = append(c.endpoints, endpoint)
-	c.lock.RUnlock()
-}
-func (c *hashClient) RemoveEndpoint(endpoint string) {
-	c.lock.Lock()
-	for i, end := range c.endpoints {
-		if end == endpoint {
-			c.endpoints = append(c.endpoints[:i], c.endpoints[i+1:]...)
-			c.lock.Unlock()
-			return
-		}
+//Call ....
+func (c *FuncClient) Call(ctx context.Context, req *Request) (*Response, error) {
+	cli := NewFuncServiceClient(c.conn)
+	resp, err := cli.Call(ctx, req)
+	if err != nil {
+		c.Close()
+		return resp, err
 	}
-	c.lock.Unlock()
+	return resp, nil
 }
 
-func (c *hashClient) connect() *grpc.ClientConn {
-	for {
-		c.lock.RLock()
-		conn, err := grpc.Dial(c.endpoints[int(bblwheel.Murmur3(uuid.NewV4().Bytes()))%len(c.endpoints)], c.opts...)
-		c.lock.RUnlock()
-		if err != nil {
-			log.Println("grpc.Dial", err)
-			continue
-		}
-		return conn
+//Channel ....
+func (c *FuncClient) Channel(ctx context.Context) (FuncService_ChannelClient, error) {
+	ch, err := NewFuncServiceClient(c.conn).Channel(ctx)
+	if err != nil {
+		c.Close()
+		return nil, err
 	}
-}
-func (c *hashClient) Call(ctx context.Context, req *Request) (*Response, error) {
-	if c.con == nil {
-		c.con = c.connect()
-	}
-	cli := NewFuncServiceClient(c.con)
-	return cli.Call(ctx, req)
-}
-func (c *hashClient) Send(msg *Message) error {
-	if c.con == nil {
-		c.con = c.connect()
-		cli := NewFuncServiceClient(c.con)
-		ch, err := cli.Channel(context.Background())
-		if err != nil {
-			return err
-		}
-		c.ch = ch
-	}
-	return c.ch.Send(msg)
-}
-
-func (c *hashClient) Recv() (*Message, error) {
-	if c.con == nil {
-		c.con = c.connect()
-		cli := NewFuncServiceClient(c.con)
-		ch, err := cli.Channel(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		c.ch = ch
-	}
-	return c.ch.Recv()
+	return ch, nil
 }
