@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"time"
@@ -19,10 +18,10 @@ var (
 )
 
 //HandleCall ....
-type HandleCall func(*Request, *Response) error
+type HandleCall func(*Request, *Response)
 
 //HandleMessage ....
-type HandleMessage func(*Message) (*Message, error)
+type HandleMessage func(*Message) *Message
 
 var defrpc = NewFuncServer()
 
@@ -34,10 +33,16 @@ func ListenAndServe() error {
 //NewFuncServer ....
 func NewFuncServer() *Server {
 	bbl := &Server{
-		routerA: map[string]func(*Request, *Response) error{},
-		routerB: map[string]func(*Message) (*Message, error){},
+		routerA: map[string]func(*Request, *Response){},
+		routerB: map[string]func(*Message) *Message{},
+		chain: &filterChain{
+			befchain:   []Filter{},
+			afterchain: []Filter{},
+			chain:      []Filter{},
+			idx:        0,
+		},
 	}
-
+	bbl.chain.router = &routerFilter{bbl.routerA}
 	return bbl
 }
 
@@ -55,8 +60,9 @@ func (r *Request) newResponse() *Response {
 type Server struct {
 	server  *grpc.Server
 	wg      sync.WaitGroup
-	routerA map[string]func(*Request, *Response) error
-	routerB map[string]func(*Message) (*Message, error)
+	routerA map[string]func(*Request, *Response)
+	routerB map[string]func(*Message) *Message
+	chain   *filterChain
 }
 
 //Serve ....
@@ -103,13 +109,8 @@ func (s *Server) Call(ctx context.Context, req *Request) (*Response, error) {
 			log.Println(err)
 		}
 	}()
-	if f, found := s.routerA[req.Path]; found {
-		if err := f(req, resp); err != nil {
-			return nil, err
-		}
-		return resp, nil
-	}
-	return resp, fmt.Errorf("Path: %s, function not found", req.Path)
+	s.chain.DoFilter(req, resp)
+	return resp, nil
 }
 
 //Channel ....
@@ -125,9 +126,7 @@ func (s *Server) Channel(ch FuncService_ChannelServer) error {
 			return err
 		}
 		if f, found := s.routerB[msg.Path]; found {
-			if m, err := f(msg); err == nil && m != nil {
-				return ch.Send(m)
-			}
+			return ch.Send(f(msg))
 		}
 	}
 }
@@ -140,6 +139,20 @@ func (s *Server) HandleCallFunc(path string, h HandleCall) {
 //HandleMessageFunc ....
 func (s *Server) HandleMessageFunc(path string, h HandleMessage) {
 	s.routerB[path] = h
+}
+
+type routerFilter struct {
+	routerA map[string]func(*Request, *Response)
+}
+
+func (f *routerFilter) DoFilter(req *Request, resp *Response, chain FilterChain) {
+	if f, found := f.routerA[req.Path]; found {
+		f(req, resp)
+	} else {
+		resp.Status = 404
+		resp.StatusText = "Not Found"
+	}
+	chain.DoFilter(req, resp)
 }
 
 //HandleCallFunc ....

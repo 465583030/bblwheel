@@ -52,11 +52,10 @@ func main() {
 	server := rpc.NewFuncServer()
 
 	//stats.
-	server.HandleCallFunc("/echo", func(req *rpc.Request, resp *rpc.Response) error {
+	server.HandleCallFunc("/echo", func(req *rpc.Request, resp *rpc.Response) {
 		resp.Content = req.Content
 		provider.Stats.Count++
 		//time.Sleep(time.Duration(rand.Int()) * time.Millisecond)
-		return nil
 	})
 	provider.Tags = []string{"Author: " + Author, "Mail: " + Mail, "Version: " + Version}
 	provider.Single = false

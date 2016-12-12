@@ -34,5 +34,10 @@
 
 ###客户端
 - [java客户端和例子](https://github.com/gqf2008/bblwheel-java)
-- [go客户端和例子](https://github.com/gqf2008/bblwheel/tree/master/client)
+- [go示例](https://github.com/gqf2008/bblwheel/tree/master/example)
 - [bblagent](https://github.com/gqf2008/bblwheel/tree/master/cmd/bblagent)
+
+
+###RPC服务器
+基于gRPC封装的通用rpc服务框架，实现了个简单echo服务器，在我的mac pro上1k数据10000qps,4k数据量5000+qps，可以满足业务需求
+- [例子](https://github.com/gqf2008/bblwheel/tree/master/example/server)
