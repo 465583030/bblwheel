@@ -102,13 +102,16 @@ func (s *Wheel) LookupConfig(_ context.Context, req *LookupConfigReq) (*LookupCo
 func (s *Wheel) LookupService(_ context.Context, req *LookupServiceReq) (*LookupServiceResp, error) {
 	resp := &LookupServiceResp{Services: []*Service{}}
 	if len(req.DependentServices) > 0 {
+		grpclog.Println("DependentServices", req.DependentServices, req.ServiceName, req.ServiceID)
 		var dep = []string{}
 		for _, name := range req.DependentServices {
 			if aumgt.has(name, req.ServiceName) {
 				dep = append(dep, name)
 			}
 		}
+		grpclog.Println("auth.DependentServices", dep)
 		resp.Services = srvmgt.findServiceList(dep)
+		grpclog.Println("auth.DependentServices", resp.Services)
 	}
 	return resp, nil
 }

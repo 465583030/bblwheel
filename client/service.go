@@ -106,7 +106,7 @@ func (s *ServiceProvider) LookupService(deps []string) []*bblwheel.Service {
 		s.reconnect()
 	}
 	cli := bblwheel.NewBblWheelClient(s.conn)
-	res, err := cli.LookupService(context.Background(), &bblwheel.LookupServiceReq{DependentServices: deps})
+	res, err := cli.LookupService(context.Background(), &bblwheel.LookupServiceReq{ServiceID: s.ID, ServiceName: s.Name, DependentServices: deps})
 	if err == io.EOF {
 		grpclog.Println("ServiceInstance.LookupService", err)
 		s.reconnect()
