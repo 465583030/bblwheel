@@ -1,5 +1,5 @@
 # bblwheel
-一个基于etcd、grpc的服务治理中心，具备简单服务注册、发现、配置、授权、rpc框架等功能
+一个基于etcd、grpc的服务治理中心，具备简单服务注册、发现、配置、授权、rpc框架等功能，可以用于生产环境了^_^。
 
 ###编译
 [Golang 1.6+](https://golang.org/dl/)
